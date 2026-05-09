@@ -1,14 +1,14 @@
-// app.js — Recal main controller (Claude API edition)
+// app.js — Recal main controller
 import { DocumentStore } from "./documents.js";
 import { marked }        from "https://esm.run/marked";
 import DOMPurify         from "https://esm.run/dompurify";
 
 marked.setOptions({ breaks: true, gfm: true });
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const md  = text => DOMPurify.sanitize(marked.parse(text ?? ""));
-const $   = id   => document.getElementById(id);
+const md      = text => DOMPurify.sanitize(marked.parse(text ?? ""));
+const $       = id   => document.getElementById(id);
 const scrollEnd = el => { el.scrollTop = el.scrollHeight; };
 
 function fmtSize(bytes) {
@@ -23,19 +23,17 @@ function parseJSON(raw) {
   try { return JSON.parse(stripped); } catch {}
   const m = raw.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   if (m) { try { return JSON.parse(m[0]); } catch {} }
-  throw new Error("Could not parse structured response. Please try again.");
+  throw new Error("Could not parse structured response — please try again.");
 }
 
-// ─── API helpers ──────────────────────────────────────────────────────────────
+// ─── API ──────────────────────────────────────────────────────────────────────
 
-// Stream from /api/chat, calling onChunk(delta) for each text piece.
 async function streamChat({ messages, mode = "chat", temperature = 0.7 }, onChunk) {
   const res = await fetch("/api/chat", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ messages, mode, temperature }),
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? "API request failed");
@@ -48,11 +46,9 @@ async function streamChat({ messages, mode = "chat", temperature = 0.7 }, onChun
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     buf += dec.decode(value, { stream: true });
     const lines = buf.split("\n");
-    buf = lines.pop(); // keep incomplete line
-
+    buf = lines.pop();
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const raw = line.slice(6).trim();
@@ -69,9 +65,8 @@ async function streamChat({ messages, mode = "chat", temperature = 0.7 }, onChun
   }
 }
 
-// Call /api/generate and return the full text (for JSON outputs)
 async function generate({ messages, mode, temperature = 0.3 }) {
-  const res = await fetch("/api/generate", {
+  const res  = await fetch("/api/generate", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ messages, mode, temperature }),
@@ -81,39 +76,82 @@ async function generate({ messages, mode, temperature = 0.3 }) {
   return data.content;
 }
 
-// ─── App ─────────────────────────────────────────────────────────────────────
+// ─── Welcome HTML (reused by new-chat) ───────────────────────────────────────
+
+const WELCOME_HTML = `
+  <div class="welcome">
+    <div class="welcome-logo">🎓</div>
+    <h2>Welcome to Recal!</h2>
+    <p>Upload your study materials, then ask me anything — or use a Quick Action in the sidebar.</p>
+    <div class="feature-list">
+      <div class="feature">🎯 Adaptive practice tests with detailed explanations</div>
+      <div class="feature">🃏 Flashcard decks for active recall practice</div>
+      <div class="feature">📊 Topic extraction &amp; mastery tracking</div>
+      <div class="feature">📅 Personalised study plans with spaced repetition</div>
+    </div>
+  </div>`;
+
+// ─── App ──────────────────────────────────────────────────────────────────────
 
 class RecalApp {
   constructor() {
-    this.store      = new DocumentStore();
-    this.history    = [];       // [{role, content}] — trimmed per request
-    this.mode       = "chat";
-    this.generating = false;
-    this.testState  = null;
-    this.topicsData = null;
+    this.store          = new DocumentStore();
+    this.history        = [];
+    this.mode           = "chat";
+    this.generating     = false;   // chat / plan flag
+    this._topicsLoading = false;   // separate flag — topics never blocks on chat
+    this.testState      = null;
+    this.topicsData     = null;
+    this.fcState        = null;
+    this._fcKeyHandler  = null;
 
     this._bindTheme();
     this._bindSidebar();
     this._bindChat();
+    this._bindNewChat();
     this._bindModes();
     this._bindTest();
     this._bindPlan();
+    this._bindFlashcards();
     this._renderTestSetup();
     this._renderPlanSetup();
+    this._renderFlashcardSetup();
     this._renderTopicsEmpty();
   }
 
-  // ── Theme ───────────────────────────────────────────────────────────────────
+  // ── Theme (with localStorage persistence) ───────────────────────────────────
 
   _bindTheme() {
+    // Sync button icon with whatever theme is currently active
+    // (The <script> in <head> may have already applied the saved theme)
+    const current = document.documentElement.getAttribute("data-theme") ?? "light";
+    $("theme-btn").textContent = current === "dark" ? "☀️" : "🌙";
+
     $("theme-btn").addEventListener("click", () => {
       const dark = document.documentElement.getAttribute("data-theme") === "dark";
-      document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
-      $("theme-btn").textContent = dark ? "🌙" : "☀️";
+      const next = dark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      $("theme-btn").textContent = next === "dark" ? "☀️" : "🌙";
+      localStorage.setItem("recal-theme", next);
     });
   }
 
-  // ── Sidebar ─────────────────────────────────────────────────────────────────
+  // ── New Chat ─────────────────────────────────────────────────────────────────
+
+  _bindNewChat() {
+    $("new-chat-btn").addEventListener("click", () => this._newChat());
+  }
+
+  _newChat() {
+    this.history    = [];
+    this.generating = false;
+    $("chat-messages").innerHTML = WELCOME_HTML;
+    $("chat-input").value = "";
+    $("chat-input").style.height = "auto";
+    this._switchMode("chat");
+  }
+
+  // ── Sidebar ──────────────────────────────────────────────────────────────────
 
   _bindSidebar() {
     $("upload-btn").addEventListener("click", () => $("file-input").click());
@@ -140,8 +178,7 @@ class RecalApp {
   async _addDocument(file) {
     const okExts = [".txt", ".pdf", ".md", ".csv", ".markdown"];
     if (!okExts.some(e => file.name.toLowerCase().endsWith(e))) {
-      this._toast(`Unsupported file type: ${file.name}`, "error");
-      return;
+      this._toast(`Unsupported file type: ${file.name}`, "error"); return;
     }
     const item = this._addDocItem(file.name);
     try {
@@ -159,9 +196,7 @@ class RecalApp {
 
   _addDocItem(name) {
     const list  = $("doc-list");
-    const empty = list.querySelector(".empty-docs");
-    if (empty) empty.remove();
-
+    list.querySelector(".empty-docs")?.remove();
     const div = document.createElement("div");
     div.className    = "doc-item";
     div.dataset.state = "processing";
@@ -201,7 +236,7 @@ class RecalApp {
     const prompts = {
       summarize:     "Please summarise all the uploaded study materials. Identify the main topics, key concepts, and most important details. Structure your summary with clear headings.",
       "key-concepts":"List and explain all the key concepts from my study materials. For each concept, provide a clear definition and a concrete real-world example.",
-      "generate-test":"Generate a quick 5-question mixed practice test covering the main topics in my study materials. Include both multiple choice and short answer questions.",
+      "generate-test":"Generate a quick 5-question mixed practice test covering the main topics in my study materials.",
       "study-plan":  "Create a comprehensive study plan for these materials using spaced repetition principles. Organise topics by importance and provide a suggested study schedule.",
     };
     const text = prompts[action];
@@ -211,7 +246,7 @@ class RecalApp {
     this._sendMessage();
   }
 
-  // ── Modes ───────────────────────────────────────────────────────────────────
+  // ── Modes ─────────────────────────────────────────────────────────────────────
 
   _bindModes() {
     document.querySelectorAll(".mode-btn").forEach(btn =>
@@ -221,18 +256,24 @@ class RecalApp {
 
   _switchMode(mode) {
     this.mode = mode;
+    // Remove flashcard keyboard handler when leaving flashcards
+    if (mode !== "flashcards" && this._fcKeyHandler) {
+      document.removeEventListener("keydown", this._fcKeyHandler);
+      this._fcKeyHandler = null;
+    }
     document.querySelectorAll(".mode-btn").forEach(b =>
       b.classList.toggle("active", b.dataset.mode === mode)
     );
     document.querySelectorAll(".panel").forEach(p =>
       p.classList.toggle("active", p.id === `panel-${mode}`)
     );
+    // Topics uses its own loading flag — never blocked by chat/plan generation
     if (mode === "topics" && !this.topicsData && this.store.hasContent) {
       this._extractTopics();
     }
   }
 
-  // ── Chat ─────────────────────────────────────────────────────────────────────
+  // ── Chat ──────────────────────────────────────────────────────────────────────
 
   _bindChat() {
     const input = $("chat-input");
@@ -260,10 +301,9 @@ class RecalApp {
     $("send-btn").disabled = true;
 
     this._appendMsg("user", text);
-    const aiEl   = this._appendMsg("ai", "", true);
-    const box    = aiEl.querySelector(".msg-content");
+    const aiEl = this._appendMsg("ai", "", true);
+    const box  = aiEl.querySelector(".msg-content");
 
-    // Build document context relevant to this query
     const docCtx     = this.store.getContext(text, 12000);
     const userContent = docCtx
       ? `Here are relevant excerpts from my study materials:\n\n${docCtx}\n\n---\n\nMy question: ${text}`
@@ -297,24 +337,24 @@ class RecalApp {
     const container = $("chat-messages");
     container.querySelector(".welcome")?.remove();
 
-    const div     = document.createElement("div");
+    const div = document.createElement("div");
     div.className = `msg msg-${role}`;
 
-    const avatar     = document.createElement("div");
+    const avatar = document.createElement("div");
     avatar.className = "msg-avatar";
     avatar.textContent = role === "user" ? "👤" : "🎓";
 
-    const bubble     = document.createElement("div");
+    const bubble = document.createElement("div");
     bubble.className = "msg-bubble";
 
-    const content     = document.createElement("div");
+    const content = document.createElement("div");
     content.className = "msg-content";
     if (text) content.innerHTML = role === "ai" ? md(text) : `<p>${text}</p>`;
 
     bubble.appendChild(content);
 
     if (streaming && !text) {
-      const spinner     = document.createElement("div");
+      const spinner = document.createElement("div");
       spinner.className = "msg-spinner";
       spinner.innerHTML = "<span></span><span></span><span></span>";
       bubble.appendChild(spinner);
@@ -325,6 +365,222 @@ class RecalApp {
     container.appendChild(div);
     scrollEnd(container);
     return div;
+  }
+
+  // ── Flashcards ────────────────────────────────────────────────────────────────
+
+  _bindFlashcards() {
+    $("panel-flashcards").addEventListener("click", e => {
+      const id = e.target.id;
+      if (id === "gen-fc-btn")      this._generateFlashcards();
+      if (id === "restart-fc-btn")  this._renderFlashcardSetup();
+      if (id === "fc-prev-btn")     this._fcNav(-1);
+      if (id === "fc-next-btn")     this._fcNav(1);
+      if (id === "fc-shuffle-btn")  this._fcShuffle();
+      if (id === "fc-review-btn")   this._fcRestart();
+      if (e.target.closest("#fc-card")) this._fcFlip();
+    });
+  }
+
+  _renderFlashcardSetup() {
+    this.fcState = null;
+    if (this._fcKeyHandler) {
+      document.removeEventListener("keydown", this._fcKeyHandler);
+      this._fcKeyHandler = null;
+    }
+    $("panel-flashcards").innerHTML = `
+      <div class="panel-inner">
+        <div class="panel-header">
+          <h2>🃏 Flashcards</h2>
+          <p>Generate a deck from your materials for active recall practice.</p>
+        </div>
+        <div class="form-card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Topic / Focus Area</label>
+              <input id="fc-topic" type="text" placeholder="e.g. Mitosis, Chapter 2 — or leave blank for all topics">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Number of Cards</label>
+              <select id="fc-count">
+                <option value="8">8 cards</option>
+                <option value="12">12 cards</option>
+                <option value="16" selected>16 cards</option>
+                <option value="20">20 cards</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Card Style</label>
+              <select id="fc-style">
+                <option value="mixed" selected>Mixed (terms &amp; Q&amp;A)</option>
+                <option value="concept">Concept → Explanation</option>
+                <option value="qa">Question → Answer</option>
+              </select>
+            </div>
+          </div>
+          <button id="gen-fc-btn" class="btn-primary">Generate Flashcards</button>
+        </div>
+      </div>`;
+  }
+
+  async _generateFlashcards() {
+    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+
+    const topic = $("fc-topic")?.value.trim() ?? "";
+    const count = $("fc-count")?.value ?? "16";
+    const style = $("fc-style")?.value ?? "mixed";
+
+    $("panel-flashcards").innerHTML = `
+      <div class="panel-inner center-content">
+        <div class="generating-anim">🃏</div>
+        <h3>Creating your flashcard deck…</h3>
+        <p class="muted">Generating ${count} cards${topic ? ` on "${topic}"` : ""}</p>
+        <div class="spinner-bar"><div class="spinner-fill"></div></div>
+      </div>`;
+
+    const docCtx = this.store.getContext(topic || "all topics", 10000);
+    const styleDesc = {
+      mixed:   "a mix of term/concept cards and question-and-answer cards",
+      concept: "term or concept on the front, explanation with example on the back",
+      qa:      "a question on the front, the answer on the back",
+    }[style];
+
+    const userMsg = `Generate exactly ${count} flashcards about "${topic || "all major topics"}" using ${styleDesc} style.
+
+Study material:
+${docCtx}
+
+Return only the JSON.`;
+
+    try {
+      const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "flashcards" });
+      const parsed = parseJSON(raw);
+      const cards  = parsed.cards ?? (Array.isArray(parsed) ? parsed : null);
+      if (!cards?.length) throw new Error("No cards returned.");
+
+      this.fcState = { cards, current: 0, flipped: false };
+      this._renderFlashcard();
+    } catch (err) {
+      $("panel-flashcards").innerHTML = `
+        <div class="panel-inner center-content">
+          <div style="font-size:2.5rem">⚠️</div>
+          <h3>Could not generate flashcards</h3>
+          <p class="muted">${err.message}</p>
+          <button id="restart-fc-btn" class="btn-secondary">Try Again</button>
+        </div>`;
+    }
+  }
+
+  _renderFlashcard() {
+    const { cards, current, flipped } = this.fcState;
+    const card   = cards[current];
+    const isLast = current === cards.length - 1;
+    const pct    = Math.round(((current + 1) / cards.length) * 100);
+
+    $("panel-flashcards").innerHTML = `
+      <div class="panel-inner fc-layout">
+        <div class="fc-header">
+          <button id="restart-fc-btn" class="btn-secondary btn-sm-text">← New Deck</button>
+          <div class="fc-meta">
+            <span class="badge badge-topic">${card.topic ?? "General"}</span>
+            <span class="badge badge-diff-${card.difficulty ?? "medium"}">${card.difficulty ?? "medium"}</span>
+          </div>
+          <span class="fc-counter">${current + 1} / ${cards.length}</span>
+        </div>
+
+        <div class="fc-progress-wrap">
+          <div class="fc-progress-bar">
+            <div class="fc-progress-fill" style="width:${pct}%"></div>
+          </div>
+        </div>
+
+        <div class="flashcard-viewport" id="fc-card" role="button" tabindex="0"
+             title="Click or press Space to flip">
+          <div class="fc-inner${flipped ? " is-flipped" : ""}">
+            <div class="fc-face fc-front">
+              <div class="fc-hint">TAP TO REVEAL</div>
+              <div class="fc-term">${card.front}</div>
+            </div>
+            <div class="fc-face fc-back">
+              <div class="fc-hint">ANSWER</div>
+              <div class="fc-explanation">${md(card.back)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fc-controls">
+          <button id="fc-prev-btn" class="btn-secondary" ${current === 0 ? "disabled" : ""}>← Prev</button>
+          <button id="fc-shuffle-btn" class="btn-secondary">🔀 Shuffle</button>
+          <button id="fc-next-btn" class="btn-primary">
+            ${isLast ? "Complete 🎉" : "Next →"}
+          </button>
+        </div>
+        <p class="fc-tip muted">← → to navigate · Space to flip</p>
+      </div>`;
+
+    // Keyboard shortcuts — attach fresh handler each render
+    if (this._fcKeyHandler) document.removeEventListener("keydown", this._fcKeyHandler);
+    this._fcKeyHandler = (e) => {
+      if (e.key === "ArrowLeft")              this._fcNav(-1);
+      if (e.key === "ArrowRight")             this._fcNav(1);
+      if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); this._fcFlip(); }
+    };
+    document.addEventListener("keydown", this._fcKeyHandler);
+  }
+
+  _fcFlip() {
+    if (!this.fcState) return;
+    this.fcState.flipped = !this.fcState.flipped;
+    document.querySelector(".fc-inner")?.classList.toggle("is-flipped", this.fcState.flipped);
+  }
+
+  _fcNav(dir) {
+    if (!this.fcState) return;
+    const next = this.fcState.current + dir;
+    if (dir > 0 && next >= this.fcState.cards.length) { this._fcShowComplete(); return; }
+    if (next < 0) return;
+    this.fcState.current = next;
+    this.fcState.flipped  = false;
+    this._renderFlashcard();
+  }
+
+  _fcShuffle() {
+    if (!this.fcState) return;
+    const arr = this.fcState.cards;
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    this.fcState.current = 0;
+    this.fcState.flipped  = false;
+    this._renderFlashcard();
+    this._toast("Deck shuffled!", "success");
+  }
+
+  _fcShowComplete() {
+    if (this._fcKeyHandler) {
+      document.removeEventListener("keydown", this._fcKeyHandler);
+      this._fcKeyHandler = null;
+    }
+    $("panel-flashcards").innerHTML = `
+      <div class="panel-inner center-content fc-complete">
+        <div class="fc-complete-emoji">🎉</div>
+        <h2>Deck Complete!</h2>
+        <p class="muted">You reviewed all ${this.fcState.cards.length} cards. Great work!</p>
+        <div class="fc-complete-actions">
+          <button id="fc-review-btn" class="btn-primary">Review Again</button>
+          <button id="restart-fc-btn" class="btn-secondary">New Deck</button>
+        </div>
+      </div>`;
+  }
+
+  _fcRestart() {
+    if (!this.fcState) return;
+    this.fcState.current = 0;
+    this.fcState.flipped  = false;
+    this._renderFlashcard();
   }
 
   // ── Practice Test ─────────────────────────────────────────────────────────────
@@ -390,25 +646,22 @@ class RecalApp {
 
   async _generateTest() {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
-    if (this.generating) return;
-    this.generating = true;
 
     const topic  = $("test-topic")?.value.trim() ?? "";
-    const count  = $("test-count")?.value  ?? "10";
-    const diff   = $("test-diff")?.value   ?? "mixed";
-    const types  = $("test-types")?.value  ?? "mixed";
+    const count  = $("test-count")?.value ?? "10";
+    const diff   = $("test-diff")?.value  ?? "mixed";
+    const types  = $("test-types")?.value ?? "mixed";
 
     $("panel-test").innerHTML = `
       <div class="panel-inner center-content">
         <div class="generating-anim">🎯</div>
         <h3>Generating your practice test…</h3>
-        <p class="muted">Claude is crafting ${count} thoughtful questions</p>
+        <p class="muted">Crafting ${count} thoughtful questions</p>
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
 
-    const docCtx = this.store.getContext(topic || "all topics", 12000);
-
-    const diffLabel  = { mixed: "a mix of easy, medium, and hard", easy: "easy (recall/recognition)", medium: "medium (application)", hard: "hard (analysis, evaluation, synthesis)" }[diff];
+    const docCtx     = this.store.getContext(topic || "all topics", 12000);
+    const diffLabel  = { mixed: "a mix of easy, medium, and hard", easy: "easy (recall)", medium: "medium (application)", hard: "hard (analysis & synthesis)" }[diff];
     const typesLabel = { mixed: "a mix of multiple choice and short answer", mcq: "multiple choice only", short: "short answer only" }[types];
 
     const userMsg = `Generate exactly ${count} questions about "${topic || "all major topics"}" at ${diffLabel} difficulty, as ${typesLabel}.
@@ -416,14 +669,13 @@ class RecalApp {
 Study material:
 ${docCtx}
 
-Return only the JSON. Make each question test genuine understanding.`;
+Return only the JSON.`;
 
     try {
       const raw     = await generate({ messages: [{ role: "user", content: userMsg }], mode: "test" });
       const parsed  = parseJSON(raw);
       const questions = parsed.questions ?? (Array.isArray(parsed) ? parsed : null);
       if (!questions?.length) throw new Error("No questions returned.");
-
       this.testState = { questions, current: 0, answers: {}, score: 0, total: questions.length };
       this._renderQuestion();
     } catch (err) {
@@ -435,7 +687,6 @@ Return only the JSON. Make each question test genuine understanding.`;
           <button id="restart-test-btn" class="btn-secondary">Try Again</button>
         </div>`;
     }
-    this.generating = false;
   }
 
   _renderQuestion() {
@@ -490,8 +741,8 @@ Return only the JSON. Make each question test genuine understanding.`;
 
     document.querySelectorAll(".mcq-opt").forEach(b => {
       b.dataset.answered = "1";
-      if (b.dataset.letter === correct)       b.classList.add("correct");
-      else if (b === btn && !isRight)          b.classList.add("wrong");
+      if (b.dataset.letter === correct) b.classList.add("correct");
+      else if (b === btn && !isRight)   b.classList.add("wrong");
     });
 
     this.testState.answers[this.testState.current] = { type: "mcq", chosen, correct, isRight };
@@ -499,27 +750,23 @@ Return only the JSON. Make each question test genuine understanding.`;
 
     const fb = $("q-feedback");
     fb.classList.remove("hidden");
-    if (isRight) {
-      fb.className  = "question-feedback feedback-correct";
-      fb.innerHTML  = `<strong>✅ Correct!</strong> ${q.brief_explanation ?? ""}`;
-    } else {
-      fb.className  = "question-feedback feedback-wrong";
-      fb.innerHTML  = `<strong>❌ Incorrect.</strong> The correct answer is <strong>${correct}</strong>.<br>${md(q.full_explanation ?? q.brief_explanation ?? "")}`;
-    }
+    fb.className = isRight ? "question-feedback feedback-correct" : "question-feedback feedback-wrong";
+    fb.innerHTML = isRight
+      ? `<strong>✅ Correct!</strong> ${q.brief_explanation ?? ""}`
+      : `<strong>❌ Incorrect.</strong> The correct answer is <strong>${correct}</strong>.<br>${md(q.full_explanation ?? q.brief_explanation ?? "")}`;
+
     $("test-nav").classList.remove("hidden");
   }
 
   _submitShortAnswer() {
     const val = $("short-input")?.value.trim();
     if (!val) return;
-
     const q = this.testState.questions[this.testState.current];
     this.testState.answers[this.testState.current] = { type: "short", given: val };
 
     const fb = $("q-feedback");
     fb.classList.remove("hidden");
     fb.className = "question-feedback feedback-info";
-
     const keyPoints = (q.key_points ?? []).map(p => `<li>${p}</li>`).join("");
     fb.innerHTML = `
       <strong>📖 Model Answer</strong>
@@ -581,10 +828,7 @@ Return only the JSON. Make each question test genuine understanding.`;
             <div class="results-bar"><div class="results-fill" style="width:${pct}%"></div></div>
           </div>
         </div>
-        <div class="results-breakdown">
-          <h3>Question Breakdown</h3>
-          ${breakdown}
-        </div>
+        <div class="results-breakdown"><h3>Question Breakdown</h3>${breakdown}</div>
         <div class="results-actions">
           <button id="restart-test-btn" class="btn-primary">Take Another Test</button>
           <button id="review-chat-btn" class="btn-secondary">Ask Recal for Help</button>
@@ -593,22 +837,18 @@ Return only the JSON. Make each question test genuine understanding.`;
 
     $("review-chat-btn")?.addEventListener("click", () => {
       const missed = questions
-        .filter((_, i) => {
-          const a = answers[i] ?? {};
-          return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1;
-        })
-        .map(q => q.topic ?? q.question)
-        .join(", ");
+        .filter((_, i) => { const a = answers[i] ?? {}; return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1; })
+        .map(q => q.topic ?? q.question).join(", ");
       this._switchMode("chat");
-      $("chat-input").value = `I just took a practice test and struggled with: ${missed}. Can you explain these topics in detail with analogies and examples?`;
+      $("chat-input").value = `I struggled with: ${missed}. Can you explain these topics with analogies and examples?`;
     });
   }
 
-  // ── Study Plan ───────────────────────────────────────────────────────────────
+  // ── Study Plan ────────────────────────────────────────────────────────────────
 
   _bindPlan() {
     $("panel-plan").addEventListener("click", e => {
-      if (e.target.id === "gen-plan-btn")  this._generatePlan();
+      if (e.target.id === "gen-plan-btn")   this._generatePlan();
       if (e.target.id === "reset-plan-btn") this._renderPlanSetup();
     });
   }
@@ -648,8 +888,6 @@ Return only the JSON. Make each question test genuine understanding.`;
 
   async _generatePlan() {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
-    if (this.generating) return;
-    this.generating = true;
 
     const dateVal = $("plan-date")?.value;
     const hours   = $("plan-hours")?.value ?? "2";
@@ -670,26 +908,18 @@ Return only the JSON. Make each question test genuine understanding.`;
     const docCtx = this.store.getOverview(10000);
     const userMsg = `Create a detailed, practical study plan.
 
-Student details:
+Details:
 - ${days ? `Days until exam: ${days} (target: ${dateVal})` : "No specific deadline — general ongoing plan"}
-- Daily available study time: ${hours} hour(s)
+- Daily study time: ${hours} hour(s)
 ${focus ? `- Student notes: ${focus}` : ""}
 
-Study materials overview:
+Study materials:
 ${docCtx}
 
-Build a complete, day-by-day plan (or week-by-week if > 14 days) with:
-1. All topics and subtopics identified and prioritised
-2. Spaced repetition schedule — revisit key topics multiple times
-3. Active recall techniques for each topic type
-4. Concrete daily tasks with checkboxes
-5. Review sessions and buffer time
-6. Motivational milestones
-
-Use markdown tables, headers, and task checkboxes.`;
+Build a complete plan with spaced repetition, active recall techniques, daily tasks with checkboxes, and review sessions. Use markdown tables and headers.`;
 
     try {
-      const wrapper   = document.createElement("div");
+      const wrapper = document.createElement("div");
       wrapper.className = "panel-inner plan-output";
       wrapper.innerHTML = `<div id="plan-md"></div>
         <div class="plan-actions">
@@ -698,14 +928,12 @@ Use markdown tables, headers, and task checkboxes.`;
       panel.innerHTML = "";
       panel.appendChild(wrapper);
 
-      const planMd = $("plan-md");
-      let   full   = "";
-
+      let full = "";
       await streamChat(
         { messages: [{ role: "user", content: userMsg }], mode: "plan", temperature: 0.6 },
         delta => {
           full += delta;
-          planMd.innerHTML = md(full);
+          $("plan-md").innerHTML = md(full);
           scrollEnd(panel);
         }
       );
@@ -717,7 +945,6 @@ Use markdown tables, headers, and task checkboxes.`;
           <button id="reset-plan-btn" class="btn-secondary">Try Again</button>
         </div>`;
     }
-    this.generating = false;
   }
 
   // ── Topics ────────────────────────────────────────────────────────────────────
@@ -727,13 +954,17 @@ Use markdown tables, headers, and task checkboxes.`;
       <div class="panel-inner center-content">
         <div style="font-size:3rem">📊</div>
         <h3>${this.store.hasContent ? "Analysing materials…" : "No Materials Yet"}</h3>
-        <p class="muted">${this.store.hasContent ? "Claude is extracting your topic map." : "Upload study materials to see a topic breakdown."}</p>
+        <p class="muted">${this.store.hasContent
+          ? "Claude is extracting your topic map. This takes about 10–20 seconds."
+          : "Upload study materials to see a topic breakdown."}</p>
       </div>`;
   }
 
   async _extractTopics() {
-    if (!this.store.hasContent || this.generating) return;
-    this.generating = true;
+    if (!this.store.hasContent) return;
+    if (this._topicsLoading) return;   // own flag — never blocked by chat/plan
+
+    this._topicsLoading = true;
     this._renderTopicsEmpty();
 
     const docCtx = this.store.getOverview(10000);
@@ -742,39 +973,48 @@ Use markdown tables, headers, and task checkboxes.`;
 Materials:
 ${docCtx}
 
-Be exhaustive. Return only JSON.`;
+Be exhaustive — extract every significant topic and subtopic. Return only JSON.`;
 
     try {
       const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "topics" });
       const parsed = parseJSON(raw);
       this.topicsData = parsed.topics ?? (Array.isArray(parsed) ? parsed : null);
-      if (!this.topicsData?.length) throw new Error("No topics extracted.");
+      if (!this.topicsData?.length) throw new Error("No topics extracted — try uploading more content.");
       this._renderTopics();
     } catch (err) {
+      this.topicsData = null;  // allow retry on next tab visit
       $("panel-topics").innerHTML = `
         <div class="panel-inner center-content">
-          <div>⚠️</div><h3>Could not extract topics</h3>
+          <div style="font-size:2.5rem">⚠️</div>
+          <h3>Could not extract topics</h3>
           <p class="muted">${err.message}</p>
-          <button onclick="window.app._extractTopics()" class="btn-secondary">Retry</button>
+          <button id="retry-topics-btn" class="btn-secondary">Retry</button>
         </div>`;
+      $("retry-topics-btn")?.addEventListener("click", () => {
+        this._topicsLoading = false;
+        this._extractTopics();
+      });
     }
-    this.generating = false;
+
+    this._topicsLoading = false;
   }
 
   _renderTopics() {
     const impColor = { high: "var(--clr-error)", medium: "var(--clr-warning)", low: "var(--clr-success)" };
 
     const cards = this.topicsData.map((t, i) => {
-      const subtopics = (t.subtopics ?? []).map(s => `
-        <div class="subtopic">
-          <input type="checkbox" id="st-${i}-${s.replace(/\s/g,"-")}" class="subtopic-check">
-          <label for="st-${i}-${s.replace(/\s/g,"-")}">${s}</label>
-        </div>`).join("");
+      const subtopics = (t.subtopics ?? []).map(s => {
+        const sid = `st-${i}-${s.replace(/\W/g, "-")}`;
+        return `
+          <div class="subtopic">
+            <input type="checkbox" id="${sid}" class="subtopic-check">
+            <label for="${sid}">${s}</label>
+          </div>`;
+      }).join("");
       const prereqs = (t.prerequisites ?? []).length
-        ? `<div class="topic-prereqs">📋 Prereqs: ${t.prerequisites.join(", ")}</div>`
-        : "";
+        ? `<div class="topic-prereqs">📋 Prereqs: ${t.prerequisites.join(", ")}</div>` : "";
       return `
-        <div class="topic-card" data-importance="${t.importance}">
+        <div class="topic-card">
           <div class="topic-header">
             <div class="topic-dot" style="background:${impColor[t.importance] ?? "var(--clr-primary)"}"></div>
             <h3 class="topic-name">${t.name}</h3>
@@ -791,7 +1031,7 @@ Be exhaustive. Return only JSON.`;
       <div class="panel-inner">
         <div class="panel-header">
           <h2>📊 Topic Map</h2>
-          <p>${this.topicsData.length} topics found. Tick off subtopics as you master them.</p>
+          <p>${this.topicsData.length} topics found. Tick subtopics as you master them.</p>
         </div>
         <div class="topics-grid">${cards}</div>
       </div>`;
@@ -802,7 +1042,6 @@ Be exhaustive. Return only JSON.`;
         $("chat-input").value = `Explain "${btn.dataset.topic}" in detail with analogies and concrete examples from my study materials.`;
       });
     });
-
     document.querySelectorAll(".subtopic-check").forEach(cb => {
       const key = "recal-cb-" + cb.id;
       cb.checked = localStorage.getItem(key) === "1";
@@ -810,7 +1049,7 @@ Be exhaustive. Return only JSON.`;
     });
   }
 
-  // ── Toast ────────────────────────────────────────────────────────────────────
+  // ── Toast ─────────────────────────────────────────────────────────────────────
 
   _toast(msg, type = "info") {
     const el = document.createElement("div");

@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const config = { runtime: "edge" };
 
+// Initialised inside handler — avoids Edge Runtime cold-start issues
 const SYSTEM_PROMPTS = {
   chat: `You are Recal, an adaptive learning assistant that helps college students study effectively from their uploaded course materials.
 

@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Recal — Adaptive Learning Assistant</title>
+  <!-- Apply saved theme before first paint to prevent flash -->
+  <script>
+    const t = localStorage.getItem("recal-theme");
+    if (t) document.documentElement.setAttribute("data-theme", t);
+  </script>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,14 +24,16 @@
 
       <nav class="mode-nav">
         <button class="mode-btn active" data-mode="chat">💬 Chat</button>
+        <button class="mode-btn" data-mode="flashcards">🃏 Flashcards</button>
         <button class="mode-btn" data-mode="test">🎯 Practice Test</button>
         <button class="mode-btn" data-mode="plan">📅 Study Plan</button>
         <button class="mode-btn" data-mode="topics">📊 Topics</button>
       </nav>
 
       <div class="header-actions">
+        <button id="new-chat-btn" class="btn-new-chat" title="Clear conversation and start fresh">＋ New Chat</button>
         <span class="model-badge" title="Powered by Claude">✦ Claude</span>
-        <button id="theme-btn" title="Toggle light / dark mode">🌙</button>
+        <button id="theme-btn" class="theme-btn" title="Toggle dark / light mode">🌙</button>
       </div>
     </header>
 
@@ -73,7 +80,7 @@
               <p>Upload your study materials, then ask me anything — or use a Quick Action in the sidebar.</p>
               <div class="feature-list">
                 <div class="feature">🎯 Adaptive practice tests with detailed explanations</div>
-                <div class="feature">💡 Concept breakdowns with real-world analogies</div>
+                <div class="feature">🃏 Flashcard decks for active recall practice</div>
                 <div class="feature">📊 Topic extraction &amp; mastery tracking</div>
                 <div class="feature">📅 Personalised study plans with spaced repetition</div>
               </div>
@@ -92,6 +99,9 @@
             </div>
           </div>
         </div>
+
+        <!-- Flashcards (content injected by JS) -->
+        <div id="panel-flashcards" class="panel"></div>
 
         <!-- Practice Test (content injected by JS) -->
         <div id="panel-test" class="panel"></div>

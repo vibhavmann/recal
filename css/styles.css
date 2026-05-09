@@ -678,6 +678,143 @@ header {
 .toast-error   { background: var(--clr-error);   color: #fff; }
 .toast-info    { background: var(--clr-info);     color: #fff; }
 
+/* ── New Chat button ────────────────────────────────────────────────────────── */
+.btn-new-chat {
+  font-size: .78rem; font-weight: 600;
+  color: var(--txt-2);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.btn-new-chat:hover { border-color: var(--clr-primary); color: var(--clr-primary); }
+
+/* ── Theme button ────────────────────────────────────────────────────────────── */
+.theme-btn {
+  font-size: 1.1rem;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--transition);
+  flex-shrink: 0;
+}
+.theme-btn:hover { background: var(--bg); }
+
+/* ── Misc ────────────────────────────────────────────────────────────────────── */
+.btn-sm-text {
+  font-size: .78rem;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+/* ── Flashcards ──────────────────────────────────────────────────────────────── */
+.fc-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+  /* let it scroll if card back is long */
+  overflow-y: auto;
+}
+.fc-header {
+  display: flex; align-items: center; gap: 10px;
+}
+.fc-meta { display: flex; gap: 6px; flex: 1; }
+.fc-counter {
+  font-size: .82rem; font-weight: 700;
+  color: var(--txt-3);
+  white-space: nowrap;
+}
+.fc-progress-wrap { margin: 0 0 4px; }
+.fc-progress-bar {
+  height: 5px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.fc-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--clr-primary), #818cf8);
+  border-radius: 99px;
+  transition: width .4s ease;
+}
+
+/* 3-D flip card */
+.flashcard-viewport {
+  perspective: 1200px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: var(--radius);
+  min-height: 220px;
+}
+.fc-inner {
+  position: relative;
+  width: 100%; min-height: 220px;
+  transform-style: preserve-3d;
+  transition: transform .45s cubic-bezier(.4,0,.2,1);
+}
+.fc-inner.is-flipped { transform: rotateY(180deg); }
+
+.fc-face {
+  position: absolute; inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  padding: 28px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: hidden;
+}
+.fc-back {
+  transform: rotateY(180deg);
+  justify-content: flex-start;
+  text-align: left;
+  overflow-y: auto;
+}
+.fc-hint {
+  font-size: .65rem; font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--txt-3);
+  margin-bottom: 12px;
+  align-self: flex-start;
+}
+.fc-term {
+  font-size: 1.3rem; font-weight: 700;
+  line-height: 1.35;
+  color: var(--txt);
+}
+.fc-explanation {
+  font-size: .88rem; line-height: 1.65;
+  color: var(--txt);
+  width: 100%;
+}
+.fc-explanation p { margin-bottom: .5em; }
+.fc-explanation p:last-child { margin-bottom: 0; }
+.fc-explanation strong { font-weight: 700; }
+.fc-explanation ul, .fc-explanation ol { padding-left: 1.2em; margin: .3em 0; }
+
+.fc-controls {
+  display: flex; gap: 10px; align-items: center;
+}
+.fc-controls .btn-primary,
+.fc-controls .btn-secondary { flex: 1; justify-content: center; text-align: center; }
+
+.fc-tip { font-size: .75rem; text-align: center; }
+
+/* Completion screen */
+.fc-complete-emoji { font-size: 3.5rem; margin-bottom: 8px; }
+.fc-complete-actions { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
+
 /* ── Scrollbars ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
