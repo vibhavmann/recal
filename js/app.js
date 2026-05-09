@@ -119,17 +119,20 @@ const WELCOME_HTML = `
 
 class RecalApp {
   constructor() {
-    this.store          = new DocumentStore();
-    this.history        = [];
-    this.mode           = "chat";
-    this.generating     = false;   // chat / plan flag
-    this._topicsLoading = false;   // separate flag — topics never blocks on chat
-    this.testState      = null;
-    this.topicsData     = null;
-    this.fcState        = null;
-    this._fcKeyHandler  = null;
+    this.store            = new DocumentStore();
+    this.history          = [];
+    this.mode             = "chat";
+    this.generating       = false;
+    this._topicsLoading   = false;
+    this.testState        = null;
+    this.topicsData       = null;
+    this.fcState          = null;
+    this._fcKeyHandler    = null;
+    this.webSearchEnabled = false;
+    this._mmRendered      = false;
 
     this._bindTheme();
+    this._bindWebSearchToggle();
     this._bindSidebarMobile();
     this._bindSidebar();
     this._bindChat();
@@ -138,10 +141,36 @@ class RecalApp {
     this._bindTest();
     this._bindPlan();
     this._bindFlashcards();
+    this._bindMindMap();
     this._renderTestSetup();
     this._renderPlanSetup();
     this._renderFlashcardSetup();
     this._renderTopicsEmpty();
+    this._renderMindMapSetup();
+  }
+
+  // ── Web search toggle ─────────────────────────────────────────────────────────
+
+  _bindWebSearchToggle() {
+    const btn = $("web-search-toggle");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      this.webSearchEnabled = !this.webSearchEnabled;
+      btn.classList.toggle("active", this.webSearchEnabled);
+      btn.title = this.webSearchEnabled
+        ? "Web search ON — click to disable"
+        : "Web search OFF — click to enable";
+      this._toast(this.webSearchEnabled ? "Web search enabled" : "Web search disabled", "info");
+    });
+  }
+
+  // ── Generating state (disables interactive controls) ─────────────────────────
+
+  _setGenerating(bool) {
+    this.generating = bool;
+    const webToggle = $("web-search-toggle");
+    if (webToggle) webToggle.disabled = bool;
+    $("send-btn").disabled = bool;
   }
 
   // ── Theme (with localStorage persistence) ───────────────────────────────────
@@ -168,8 +197,8 @@ class RecalApp {
   }
 
   _newChat() {
-    this.history    = [];
-    this.generating = false;
+    this.history = [];
+    this._setGenerating(false);
     $("chat-messages").innerHTML = WELCOME_HTML;
     $("chat-input").value = "";
     $("chat-input").style.height = "auto";
@@ -283,17 +312,70 @@ class RecalApp {
 
   _quickAction(action) {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    if (action === "key-concepts") {
+      this._showKeyConceptsModal().then(level => {
+        if (!level) return;
+        const prompts = {
+          small:  "List all key concepts from my study materials as a concise bulleted list. For each concept, write a single clear definition sentence only. Be comprehensive — include every significant concept.",
+          medium: "List all key concepts from my study materials. For each concept, write a 2-3 sentence explanation. Be comprehensive — do not skip any important concept.",
+          large:  "List and fully explain all key concepts from my study materials. For each concept provide: (1) a clear definition, (2) a detailed explanation of how it works or why it matters, and (3) a concrete real-world example. Be thorough — do not skip any concept.",
+        };
+        this._switchMode("chat");
+        $("chat-input").value = prompts[level];
+        this._sendMessage();
+      });
+      return;
+    }
     const prompts = {
-      summarize:     "Please summarise all the uploaded study materials. Identify the main topics, key concepts, and most important details. Structure your summary with clear headings.",
-      "key-concepts":"List and explain all the key concepts from my study materials. For each concept, provide a clear definition and a concrete real-world example.",
+      summarize:      "Summarise ALL of the uploaded study materials. Go through every section and topic in order — do not skip or omit any part. If materials are extensive, write a condensed but complete summary for each section. Structure your response with clear headings for each major topic.",
       "generate-test":"Generate a quick 5-question mixed practice test covering the main topics in my study materials.",
-      "study-plan":  "Create a comprehensive study plan for these materials using spaced repetition principles. Organise topics by importance and provide a suggested study schedule.",
+      "study-plan":   "Create a study plan for these materials using spaced repetition principles.",
     };
     const text = prompts[action];
     if (!text) return;
     this._switchMode("chat");
     $("chat-input").value = text;
     this._sendMessage();
+  }
+
+  _showKeyConceptsModal() {
+    return new Promise(resolve => {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.innerHTML = `
+        <div class="modal-box" role="dialog" aria-modal="true">
+          <h3>Key Concepts Detail Level</h3>
+          <p>How detailed should the key concepts list be?</p>
+          <div class="modal-opts">
+            <button class="modal-opt" data-level="small">
+              <strong>Small</strong>
+              <span>Concise list — main concepts with one-line definitions</span>
+            </button>
+            <button class="modal-opt" data-level="medium">
+              <strong>Medium</strong>
+              <span>Concepts with 2-3 sentence explanations</span>
+            </button>
+            <button class="modal-opt" data-level="large">
+              <strong>Large</strong>
+              <span>Full detail — definitions, explanations &amp; examples for every concept</span>
+            </button>
+          </div>
+          <button class="modal-cancel">Cancel</button>
+        </div>`;
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add("show"));
+
+      const close = level => {
+        overlay.classList.remove("show");
+        setTimeout(() => overlay.remove(), 250);
+        resolve(level);
+      };
+      overlay.querySelectorAll(".modal-opt").forEach(btn =>
+        btn.addEventListener("click", () => close(btn.dataset.level))
+      );
+      overlay.querySelector(".modal-cancel").addEventListener("click", () => close(null));
+      overlay.addEventListener("click", e => { if (e.target === overlay) close(null); });
+    });
   }
 
   // ── Modes ─────────────────────────────────────────────────────────────────────
@@ -317,9 +399,11 @@ class RecalApp {
     document.querySelectorAll(".panel").forEach(p =>
       p.classList.toggle("active", p.id === `panel-${mode}`)
     );
-    // Topics uses its own loading flag — never blocked by chat/plan generation
     if (mode === "topics" && !this.topicsData && this.store.hasContent) {
       this._extractTopics();
+    }
+    if (mode === "mindmap" && !this._mmRendered) {
+      this._renderMindMapSetup();
     }
   }
 
@@ -345,24 +429,17 @@ class RecalApp {
     const text  = input.value.trim();
     if (!text || this.generating) return;
 
-    this.generating = true;
+    this._setGenerating(true);
     input.value = "";
     input.style.height = "auto";
-    $("send-btn").disabled = true;
 
     this._appendMsg("user", text);
     const aiEl = this._appendMsg("ai", "", true);
     const box  = aiEl.querySelector(".msg-content");
 
-    // Show transient status while we fetch context
-    const searchMode0 = document.querySelector('input[name="search-mode"]:checked')?.value ?? "docs";
-    if (searchMode0 === "web") box.innerHTML = `<span class="status-msg">🌐 Searching the web…</span>`;
+    const useWeb = this.webSearchEnabled;
+    if (useWeb) box.innerHTML = `<span class="status-msg">🌐 Searching the web…</span>`;
 
-    // Read search mode from radio buttons
-    const searchMode = document.querySelector('input[name="search-mode"]:checked')?.value ?? "docs";
-    const useWeb     = searchMode === "web";
-
-    // Build context: documents + optional web results (in parallel when web is on)
     const [docCtx, webResults] = await Promise.all([
       Promise.resolve(this.store.getContext(text, useWeb ? 8000 : 12000)),
       useWeb ? webSearch(text) : Promise.resolve([]),
@@ -371,11 +448,14 @@ class RecalApp {
     const webCtx = formatWebResults(webResults);
 
     let userContent = text;
-    if (docCtx || webCtx) {
-      const parts = [];
-      if (docCtx)  parts.push(`=== Study Materials ===\n${docCtx}`);
-      if (webCtx)  parts.push(webCtx);
-      userContent = `${parts.join("\n\n")}\n\n---\n\nMy question: ${text}`;
+    const parts = [];
+    if (docCtx)  parts.push(`=== Study Materials ===\n${docCtx}`);
+    if (webCtx)  parts.push(webCtx);
+    if (parts.length) userContent = `${parts.join("\n\n")}\n\n---\n\nMy question: ${text}`;
+
+    // When web search is off, tell Claude to suggest it if the question is out of scope
+    if (!useWeb) {
+      userContent += "\n\n[System note: Web search is currently disabled. If this question falls outside the uploaded study materials, politely say so and suggest the user enable the web search toggle in the header.]";
     }
 
     const messages = [
@@ -397,8 +477,7 @@ class RecalApp {
     }
 
     aiEl.querySelector(".msg-spinner")?.remove();
-    this.generating   = false;
-    $("send-btn").disabled = false;
+    this._setGenerating(false);
     $("chat-input").focus();
   }
 
@@ -957,6 +1036,7 @@ Return only the JSON.`;
 
   async _generatePlan() {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    this._setGenerating(true);
 
     const dateVal = $("plan-date")?.value;
     const hours   = $("plan-hours")?.value ?? "2";
@@ -974,18 +1054,30 @@ Return only the JSON.`;
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
 
-    const docCtx = this.store.getOverview(10000);
-    const userMsg = `Create a detailed, practical study plan.
+    // Use extracted topic names if available; otherwise pull headings from documents
+    const topicContext = this.topicsData
+      ? this.topicsData.map(t => {
+          const subs = t.subtopics?.length ? ` (${t.subtopics.slice(0,4).join(", ")})` : "";
+          return `• ${t.name}${subs}`;
+        }).join("\n")
+      : this.store.getTopicNamesOverview();
 
-Details:
-- ${days ? `Days until exam: ${days} (target: ${dateVal})` : "No specific deadline — general ongoing plan"}
+    const userMsg = `Create a concise, actionable study plan in tabular format.
+
+Student details:
+- ${days ? `Days until exam: ${days} (target date: ${dateVal})` : "No specific deadline — general plan"}
 - Daily study time: ${hours} hour(s)
-${focus ? `- Student notes: ${focus}` : ""}
+${focus ? `- Priorities / concerns: ${focus}` : ""}
 
-Study materials:
-${docCtx}
+Topics to cover:
+${topicContext}
 
-Build a complete plan with spaced repetition, active recall techniques, daily tasks with checkboxes, and review sessions. Use markdown tables and headers.`;
+Format rules:
+1. Output a markdown table with columns: Day / Date | Topics | Study Activity | Duration
+2. Add a short Spaced Repetition schedule table showing when to revisit each topic (e.g. Day 1 → Review Day 3 → Review Day 7)
+3. Keep descriptions concise — one line per cell
+4. Add a brief Tips section at the end (3-4 bullet points max)
+Do NOT write paragraphs or lengthy prose — tables and bullets only.`;
 
     try {
       const wrapper = document.createElement("div");
@@ -1013,6 +1105,8 @@ Build a complete plan with spaced repetition, active recall techniques, daily ta
           <p class="muted">${err.message}</p>
           <button id="reset-plan-btn" class="btn-secondary">Try Again</button>
         </div>`;
+    } finally {
+      this._setGenerating(false);
     }
   }
 
@@ -1115,6 +1209,154 @@ Be exhaustive — extract every significant topic and subtopic. Return only JSON
       const key = "recal-cb-" + cb.id;
       cb.checked = localStorage.getItem(key) === "1";
       cb.addEventListener("change", () => localStorage.setItem(key, cb.checked ? "1" : "0"));
+    });
+  }
+
+  // ── Mind Map ──────────────────────────────────────────────────────────────────
+
+  _bindMindMap() {
+    $("panel-mindmap").addEventListener("click", e => {
+      if (e.target.id === "gen-mm-btn")   this._generateMindMap();
+      if (e.target.id === "regen-mm-btn") { this.topicsData = null; this._mmRendered = false; this._generateMindMap(); }
+    });
+  }
+
+  _renderMindMapSetup() {
+    this._mmRendered = false;
+    const hasContent = this.store.hasContent;
+    $("panel-mindmap").innerHTML = `
+      <div class="panel-inner center-content">
+        <div style="font-size:3rem;line-height:1">🗺️</div>
+        <h2>Mind Map</h2>
+        <p class="muted">Visualise your study materials as an interactive topic map.</p>
+        ${hasContent
+          ? `<button id="gen-mm-btn" class="btn-primary">Generate Mind Map</button>`
+          : `<p class="muted">Upload study materials first.</p>`}
+      </div>`;
+  }
+
+  async _generateMindMap() {
+    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    const panel = $("panel-mindmap");
+    panel.innerHTML = `
+      <div class="panel-inner center-content">
+        <div class="generating-anim">🗺️</div>
+        <h3>Building mind map…</h3>
+        <div class="spinner-bar"><div class="spinner-fill"></div></div>
+      </div>`;
+
+    if (!this.topicsData) {
+      const docCtx = this.store.getOverview(8000);
+      const userMsg = `Analyse these study materials and extract a topic map.\n\nMaterials:\n${docCtx}\n\nReturn only JSON.`;
+      try {
+        const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "topics" });
+        const parsed = parseJSON(raw);
+        this.topicsData = parsed.topics ?? (Array.isArray(parsed) ? parsed : null);
+      } catch (err) {
+        panel.innerHTML = `<div class="panel-inner center-content"><div>⚠️</div><h3>Could not generate mind map</h3><p class="muted">${err.message}</p><button id="gen-mm-btn" class="btn-secondary">Try Again</button></div>`;
+        return;
+      }
+    }
+
+    if (!this.topicsData?.length) {
+      panel.innerHTML = `<div class="panel-inner center-content"><div>⚠️</div><h3>No topics found</h3><p class="muted">Try uploading more content.</p></div>`;
+      return;
+    }
+
+    this._renderMindMap(this.topicsData);
+    this._mmRendered = true;
+  }
+
+  _renderMindMap(topics) {
+    const W = 960, H = 640, cx = 480, cy = 320;
+    const R1 = 190;
+    const clrs = ["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f97316","#06b6d4"];
+    const n = topics.length;
+
+    const lines = [];
+    const nodesSVG = [];
+
+    const wrap = (text, max) => {
+      const words = text.split(" ");
+      const rows = []; let row = "";
+      words.forEach(w => {
+        const t = row ? row + " " + w : w;
+        if (t.length > max && row) { rows.push(row); row = w; }
+        else row = t;
+      });
+      if (row) rows.push(row);
+      return rows.slice(0, 3);
+    };
+
+    const nodeEl = (x, y, rows, color, r, type, dataTopic) => {
+      const dy0 = -((rows.length - 1) * 7);
+      const tspans = rows.map((l, i) =>
+        `<tspan x="${x}" dy="${i === 0 ? dy0 : 14}">${l}</tspan>`
+      ).join("");
+      const fs   = type === "center" ? 12 : type === "topic" ? 10 : 8.5;
+      const fw   = type === "sub" ? 400 : 700;
+      const fop  = type === "sub" ? 0.08 : 0.15;
+      const sop  = type === "sub" ? 0.45 : 0.8;
+      const sw   = type === "sub" ? 1.5 : 2;
+      const dt   = dataTopic ? ` data-topic="${dataTopic}"` : "";
+      return `
+        <g class="mm-node mm-${type}"${dt}>
+          <circle cx="${x}" cy="${y}" r="${r}" fill="${color}" fill-opacity="${fop}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${sop}"/>
+          <text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle"
+            fill="${color}" font-size="${fs}" font-weight="${fw}" font-family="Inter,sans-serif">
+            ${tspans}
+          </text>
+        </g>`;
+    };
+
+    topics.forEach((topic, i) => {
+      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+      const tx = cx + R1 * Math.cos(angle);
+      const ty = cy + R1 * Math.sin(angle);
+      const clr = clrs[i % clrs.length];
+
+      lines.push(`<line x1="${cx}" y1="${cy}" x2="${tx}" y2="${ty}" stroke="${clr}" stroke-width="2.5" stroke-opacity="0.55" stroke-linecap="round"/>`);
+
+      const subs = (topic.subtopics ?? []).slice(0, 5);
+      const spread = Math.PI * 0.55;
+      subs.forEach((sub, j) => {
+        const sa = subs.length > 1
+          ? angle - spread/2 + (j / (subs.length - 1)) * spread
+          : angle;
+        const sx = tx + 115 * Math.cos(sa);
+        const sy = ty + 115 * Math.sin(sa);
+        lines.push(`<line x1="${tx}" y1="${ty}" x2="${sx}" y2="${sy}" stroke="${clr}" stroke-width="1.5" stroke-opacity="0.35" stroke-linecap="round"/>`);
+        nodesSVG.push(nodeEl(sx, sy, wrap(sub, 11), clr, 28, "sub", null));
+      });
+
+      nodesSVG.push(nodeEl(tx, ty, wrap(topic.name, 12), clr, 42, "topic", topic.name));
+    });
+
+    // Center node
+    nodesSVG.push(nodeEl(cx, cy, ["📚", "Topics"], "#6366f1", 52, "center", null));
+
+    const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block" xmlns="http://www.w3.org/2000/svg">
+      <g>${lines.join("")}</g>
+      ${nodesSVG.join("")}
+    </svg>`;
+
+    $("panel-mindmap").innerHTML = `
+      <div class="panel-inner mm-panel">
+        <div class="panel-header">
+          <h2>🗺️ Mind Map</h2>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <p class="muted">${topics.length} topics — click a topic to explain it</p>
+            <button id="regen-mm-btn" class="btn-secondary btn-sm-text">↺ Regenerate</button>
+          </div>
+        </div>
+        <div class="mm-container">${svg}</div>
+      </div>`;
+
+    $("panel-mindmap").querySelectorAll(".mm-node[data-topic]").forEach(node => {
+      node.addEventListener("click", () => {
+        this._switchMode("chat");
+        $("chat-input").value = `Explain "${node.dataset.topic}" in detail with analogies and concrete examples from my study materials.`;
+      });
     });
   }
 

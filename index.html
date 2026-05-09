@@ -34,10 +34,12 @@
         <button class="mode-btn" data-mode="test">🎯 Test</button>
         <button class="mode-btn" data-mode="plan">📅 Plan</button>
         <button class="mode-btn" data-mode="topics">📊 Topics</button>
+        <button class="mode-btn" data-mode="mindmap">🗺️ Mind Map</button>
       </nav>
 
       <div class="header-actions">
         <button id="new-chat-btn" class="btn-new-chat" title="Clear conversation">＋ New Chat</button>
+        <button id="web-search-toggle" class="web-search-toggle" title="Enable web search">🌐 Web</button>
         <span class="model-badge" title="Powered by Claude">✦ Claude</span>
         <button id="theme-btn" class="theme-btn" title="Toggle dark / light mode">🌙</button>
       </div>
@@ -99,17 +101,6 @@
             </div>
           </div>
           <div class="chat-input-area">
-            <!-- Web search toggle -->
-            <div class="search-opts">
-              <label class="search-opt">
-                <input type="radio" name="search-mode" value="docs" checked>
-                <span>📚 Materials only</span>
-              </label>
-              <label class="search-opt">
-                <input type="radio" name="search-mode" value="web">
-                <span>🌐 + Web search</span>
-              </label>
-            </div>
             <div class="input-row">
               <textarea
                 id="chat-input"
@@ -134,6 +125,9 @@
 
         <!-- Topics (content injected by JS) -->
         <div id="panel-topics" class="panel"></div>
+
+        <!-- Mind Map (content injected by JS) -->
+        <div id="panel-mindmap" class="panel"></div>
 
       </main>
     </div>

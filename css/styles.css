@@ -816,36 +816,96 @@ header {
 .fc-complete-emoji { font-size: 3.5rem; margin-bottom: 8px; }
 .fc-complete-actions { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
 
+/* ── Key-concepts detail modal ───────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity .25s ease;
+  padding: 16px;
+}
+.modal-overlay.show { opacity: 1; }
+.modal-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 24px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; gap: 16px;
+}
+.modal-box h3 { font-size: 1.1rem; font-weight: 700; }
+.modal-box > p { font-size: .88rem; color: var(--txt-2); margin-top: -8px; }
+.modal-opts { display: flex; flex-direction: column; gap: 10px; }
+.modal-opt {
+  display: flex; flex-direction: column; gap: 3px;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  background: var(--bg-input);
+  transition: all var(--transition);
+}
+.modal-opt:hover { border-color: var(--clr-primary); background: var(--clr-primary-lt); }
+.modal-opt strong { font-size: .9rem; font-weight: 700; color: var(--txt); }
+.modal-opt span { font-size: .8rem; color: var(--txt-2); }
+.modal-cancel {
+  font-size: .82rem; color: var(--txt-3);
+  padding: 6px;
+  align-self: center;
+  transition: color var(--transition);
+}
+.modal-cancel:hover { color: var(--txt); }
+
+/* ── Mind Map ─────────────────────────────────────────────────────────────────── */
+.mm-panel { max-width: 100%; }
+.mm-panel .panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+}
+.mm-panel .panel-header h2 { margin-bottom: 0; }
+.mm-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  box-shadow: var(--shadow);
+}
+.mm-container svg { display: block; }
+.mm-node { transition: opacity .15s; }
+.mm-node:hover circle { filter: brightness(1.1); }
+.mm-node[data-topic] { cursor: pointer; }
+
 /* ── Scrollbars ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--txt-3); }
 
-/* ── Web-search radio ────────────────────────────────────────────────────────── */
-.search-opts {
-  display: flex;
-  gap: 16px;
-  padding: 6px 4px 2px;
-  flex-wrap: wrap;
-}
-.search-opt {
-  display: flex; align-items: center; gap: 6px;
-  cursor: pointer;
-  font-size: .8rem;
-  color: var(--txt-2);
-  user-select: none;
-}
-.search-opt input[type="radio"] {
-  accent-color: var(--clr-primary);
-  width: 14px; height: 14px;
-  cursor: pointer;
+/* ── Web-search toggle (header) ──────────────────────────────────────────────── */
+.web-search-toggle {
+  font-size: .78rem; font-weight: 600;
+  color: var(--txt-3);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  transition: all var(--transition);
+  white-space: nowrap;
   flex-shrink: 0;
 }
-.search-opt:has(input:checked) span {
+.web-search-toggle:hover:not(:disabled) { border-color: var(--clr-primary); color: var(--clr-primary); }
+.web-search-toggle.active {
   color: var(--clr-primary);
-  font-weight: 600;
+  border-color: var(--clr-primary);
+  background: var(--clr-primary-lt);
 }
+.web-search-toggle:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Mobile sidebar toggle button */
 .sidebar-toggle {
@@ -905,6 +965,7 @@ header {
   header { padding: 0 10px; gap: 8px; }
   .brand-sm { font-size: 1.15rem; flex-shrink: 0; }
   .model-badge { display: none; }
+  .web-search-toggle { font-size: .72rem; padding: 4px 7px; }
   .sidebar-toggle { display: flex; }
 
   /* Mode nav — horizontally scrollable, no wrap */

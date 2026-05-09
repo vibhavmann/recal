@@ -106,7 +106,8 @@ export default async function handler(req) {
   const model     = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
 
   try {
-    const response = await anthropic.messages.create({
+    // Use streaming internally so Edge Runtime connection stays alive during long generations
+    const stream = anthropic.messages.stream({
       model,
       max_tokens: 8192,
       temperature,
@@ -114,7 +115,13 @@ export default async function handler(req) {
       messages,
     });
 
-    const content = response.content[0]?.text ?? "";
+    let content = "";
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+        content += event.delta.text;
+      }
+    }
+
     return new Response(JSON.stringify({ content }), { headers: CORS });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message ?? "Unknown error" }), { status: 500, headers: CORS });

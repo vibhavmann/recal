@@ -133,4 +133,21 @@ export class DocumentStore {
     }
     return parts.join("\n\n===\n\n");
   }
+
+  // Returns only topic/heading names per document — used for study plan context
+  getTopicNamesOverview() {
+    if (!this.hasContent) return "";
+    const parts = [];
+    for (const doc of this._docs.values()) {
+      const headings = [...doc.text.matchAll(/^#{1,3}\s+(.+)$/gm)].map(m => "• " + m[1].trim());
+      if (headings.length >= 3) {
+        parts.push(`[${doc.name}]\n${headings.slice(0, 40).join("\n")}`);
+      } else {
+        // No markdown headings — use first 300 words as rough overview
+        const preview = doc.text.split(/\s+/).slice(0, 300).join(" ");
+        parts.push(`[${doc.name}]\n${preview}`);
+      }
+    }
+    return parts.join("\n\n");
+  }
 }
