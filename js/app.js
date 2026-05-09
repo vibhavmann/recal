@@ -1,0 +1,826 @@
+// app.js — Recal main controller (Claude API edition)
+import { DocumentStore } from "./documents.js";
+import { marked }        from "https://esm.run/marked";
+import DOMPurify         from "https://esm.run/dompurify";
+
+marked.setOptions({ breaks: true, gfm: true });
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const md  = text => DOMPurify.sanitize(marked.parse(text ?? ""));
+const $   = id   => document.getElementById(id);
+const scrollEnd = el => { el.scrollTop = el.scrollHeight; };
+
+function fmtSize(bytes) {
+  if (bytes < 1024)    return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+}
+
+function parseJSON(raw) {
+  try { return JSON.parse(raw); } catch {}
+  const stripped = raw.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+  try { return JSON.parse(stripped); } catch {}
+  const m = raw.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (m) { try { return JSON.parse(m[0]); } catch {} }
+  throw new Error("Could not parse structured response. Please try again.");
+}
+
+// ─── API helpers ──────────────────────────────────────────────────────────────
+
+// Stream from /api/chat, calling onChunk(delta) for each text piece.
+async function streamChat({ messages, mode = "chat", temperature = 0.7 }, onChunk) {
+  const res = await fetch("/api/chat", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ messages, mode, temperature }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? "API request failed");
+  }
+
+  const reader = res.body.getReader();
+  const dec    = new TextDecoder();
+  let   buf    = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop(); // keep incomplete line
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (!raw) continue;
+      try {
+        const evt = JSON.parse(raw);
+        if (evt.error) throw new Error(evt.error);
+        if (evt.t) onChunk(evt.t);
+        if (evt.done) return;
+      } catch (e) {
+        if (e.message !== "Unexpected end of JSON input") throw e;
+      }
+    }
+  }
+}
+
+// Call /api/generate and return the full text (for JSON outputs)
+async function generate({ messages, mode, temperature = 0.3 }) {
+  const res = await fetch("/api/generate", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ messages, mode, temperature }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.content;
+}
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+
+class RecalApp {
+  constructor() {
+    this.store      = new DocumentStore();
+    this.history    = [];       // [{role, content}] — trimmed per request
+    this.mode       = "chat";
+    this.generating = false;
+    this.testState  = null;
+    this.topicsData = null;
+
+    this._bindTheme();
+    this._bindSidebar();
+    this._bindChat();
+    this._bindModes();
+    this._bindTest();
+    this._bindPlan();
+    this._renderTestSetup();
+    this._renderPlanSetup();
+    this._renderTopicsEmpty();
+  }
+
+  // ── Theme ───────────────────────────────────────────────────────────────────
+
+  _bindTheme() {
+    $("theme-btn").addEventListener("click", () => {
+      const dark = document.documentElement.getAttribute("data-theme") === "dark";
+      document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+      $("theme-btn").textContent = dark ? "🌙" : "☀️";
+    });
+  }
+
+  // ── Sidebar ─────────────────────────────────────────────────────────────────
+
+  _bindSidebar() {
+    $("upload-btn").addEventListener("click", () => $("file-input").click());
+
+    $("file-input").addEventListener("change", async e => {
+      for (const f of [...e.target.files]) await this._addDocument(f);
+      e.target.value = "";
+    });
+
+    const sidebar = document.querySelector(".sidebar");
+    sidebar.addEventListener("dragover",  e => { e.preventDefault(); sidebar.classList.add("drag-over"); });
+    sidebar.addEventListener("dragleave", () => sidebar.classList.remove("drag-over"));
+    sidebar.addEventListener("drop", async e => {
+      e.preventDefault();
+      sidebar.classList.remove("drag-over");
+      for (const f of [...e.dataTransfer.files]) await this._addDocument(f);
+    });
+
+    document.querySelectorAll(".qa-btn").forEach(btn =>
+      btn.addEventListener("click", () => this._quickAction(btn.dataset.action))
+    );
+  }
+
+  async _addDocument(file) {
+    const okExts = [".txt", ".pdf", ".md", ".csv", ".markdown"];
+    if (!okExts.some(e => file.name.toLowerCase().endsWith(e))) {
+      this._toast(`Unsupported file type: ${file.name}`, "error");
+      return;
+    }
+    const item = this._addDocItem(file.name);
+    try {
+      const id = await this.store.addFile(file);
+      this._finaliseDocItem(item, id, file.name, file.size);
+      this._toast(`Added: ${file.name}`, "success");
+      this.topicsData = null;
+      if (this.mode === "topics") this._renderTopicsEmpty();
+    } catch (err) {
+      item.dataset.state = "error";
+      item.querySelector(".doc-status").textContent = "❌ Failed";
+      this._toast(`Failed: ${err.message}`, "error");
+    }
+  }
+
+  _addDocItem(name) {
+    const list  = $("doc-list");
+    const empty = list.querySelector(".empty-docs");
+    if (empty) empty.remove();
+
+    const div = document.createElement("div");
+    div.className    = "doc-item";
+    div.dataset.state = "processing";
+    div.innerHTML = `
+      <span class="doc-icon">${name.endsWith(".pdf") ? "📄" : "📝"}</span>
+      <div class="doc-info">
+        <span class="doc-name">${name}</span>
+        <span class="doc-status">Processing…</span>
+      </div>
+      <button class="doc-remove hidden" title="Remove">✕</button>`;
+    list.appendChild(div);
+    return div;
+  }
+
+  _finaliseDocItem(item, id, name, size) {
+    item.dataset.state = "ready";
+    item.querySelector(".doc-status").textContent = fmtSize(size);
+    const btn = item.querySelector(".doc-remove");
+    btn.classList.remove("hidden");
+    btn.addEventListener("click", () => {
+      this.store.removeDoc(id);
+      item.remove();
+      if (!this.store.hasContent) {
+        $("doc-list").innerHTML = `
+          <div class="empty-docs">
+            <span>📚</span><p>No materials yet</p>
+            <p>Upload PDFs, text files, or notes</p>
+          </div>`;
+      }
+      this.topicsData = null;
+      if (this.mode === "topics") this._renderTopicsEmpty();
+    });
+  }
+
+  _quickAction(action) {
+    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    const prompts = {
+      summarize:     "Please summarise all the uploaded study materials. Identify the main topics, key concepts, and most important details. Structure your summary with clear headings.",
+      "key-concepts":"List and explain all the key concepts from my study materials. For each concept, provide a clear definition and a concrete real-world example.",
+      "generate-test":"Generate a quick 5-question mixed practice test covering the main topics in my study materials. Include both multiple choice and short answer questions.",
+      "study-plan":  "Create a comprehensive study plan for these materials using spaced repetition principles. Organise topics by importance and provide a suggested study schedule.",
+    };
+    const text = prompts[action];
+    if (!text) return;
+    this._switchMode("chat");
+    $("chat-input").value = text;
+    this._sendMessage();
+  }
+
+  // ── Modes ───────────────────────────────────────────────────────────────────
+
+  _bindModes() {
+    document.querySelectorAll(".mode-btn").forEach(btn =>
+      btn.addEventListener("click", () => this._switchMode(btn.dataset.mode))
+    );
+  }
+
+  _switchMode(mode) {
+    this.mode = mode;
+    document.querySelectorAll(".mode-btn").forEach(b =>
+      b.classList.toggle("active", b.dataset.mode === mode)
+    );
+    document.querySelectorAll(".panel").forEach(p =>
+      p.classList.toggle("active", p.id === `panel-${mode}`)
+    );
+    if (mode === "topics" && !this.topicsData && this.store.hasContent) {
+      this._extractTopics();
+    }
+  }
+
+  // ── Chat ─────────────────────────────────────────────────────────────────────
+
+  _bindChat() {
+    const input = $("chat-input");
+    const btn   = $("send-btn");
+
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._sendMessage(); }
+    });
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 160) + "px";
+      btn.disabled = !input.value.trim() || this.generating;
+    });
+    btn.addEventListener("click", () => this._sendMessage());
+  }
+
+  async _sendMessage() {
+    const input = $("chat-input");
+    const text  = input.value.trim();
+    if (!text || this.generating) return;
+
+    this.generating = true;
+    input.value = "";
+    input.style.height = "auto";
+    $("send-btn").disabled = true;
+
+    this._appendMsg("user", text);
+    const aiEl   = this._appendMsg("ai", "", true);
+    const box    = aiEl.querySelector(".msg-content");
+
+    // Build document context relevant to this query
+    const docCtx     = this.store.getContext(text, 12000);
+    const userContent = docCtx
+      ? `Here are relevant excerpts from my study materials:\n\n${docCtx}\n\n---\n\nMy question: ${text}`
+      : text;
+
+    const messages = [
+      ...this.history.slice(-8),
+      { role: "user", content: userContent },
+    ];
+
+    let full = "";
+    try {
+      await streamChat({ messages, mode: "chat" }, delta => {
+        full += delta;
+        box.innerHTML = md(full);
+        scrollEnd($("chat-messages"));
+      });
+      this.history.push({ role: "user",      content: text });
+      this.history.push({ role: "assistant", content: full });
+    } catch (err) {
+      box.innerHTML = `<span class="err-msg">⚠️ ${err.message}</span>`;
+    }
+
+    aiEl.querySelector(".msg-spinner")?.remove();
+    this.generating   = false;
+    $("send-btn").disabled = false;
+    $("chat-input").focus();
+  }
+
+  _appendMsg(role, text, streaming = false) {
+    const container = $("chat-messages");
+    container.querySelector(".welcome")?.remove();
+
+    const div     = document.createElement("div");
+    div.className = `msg msg-${role}`;
+
+    const avatar     = document.createElement("div");
+    avatar.className = "msg-avatar";
+    avatar.textContent = role === "user" ? "👤" : "🎓";
+
+    const bubble     = document.createElement("div");
+    bubble.className = "msg-bubble";
+
+    const content     = document.createElement("div");
+    content.className = "msg-content";
+    if (text) content.innerHTML = role === "ai" ? md(text) : `<p>${text}</p>`;
+
+    bubble.appendChild(content);
+
+    if (streaming && !text) {
+      const spinner     = document.createElement("div");
+      spinner.className = "msg-spinner";
+      spinner.innerHTML = "<span></span><span></span><span></span>";
+      bubble.appendChild(spinner);
+    }
+
+    div.appendChild(avatar);
+    div.appendChild(bubble);
+    container.appendChild(div);
+    scrollEnd(container);
+    return div;
+  }
+
+  // ── Practice Test ─────────────────────────────────────────────────────────────
+
+  _bindTest() {
+    $("panel-test").addEventListener("click", e => {
+      if (e.target.id === "gen-test-btn")     this._generateTest();
+      if (e.target.id === "restart-test-btn") this._renderTestSetup();
+      if (e.target.id === "next-q-btn")       this._nextQuestion();
+      if (e.target.id === "submit-short-btn") this._submitShortAnswer();
+      if (e.target.classList.contains("mcq-opt")) this._selectMCQ(e.target);
+    });
+  }
+
+  _renderTestSetup() {
+    this.testState = null;
+    $("panel-test").innerHTML = `
+      <div class="panel-inner">
+        <div class="panel-header">
+          <h2>🎯 Practice Test Generator</h2>
+          <p>Generate a custom quiz from your study materials.</p>
+        </div>
+        <div class="form-card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Topic / Focus Area</label>
+              <input id="test-topic" type="text" placeholder="e.g. Chapter 3, Photosynthesis — or leave blank for all topics">
+            </div>
+          </div>
+          <div class="form-row three-col">
+            <div class="form-group">
+              <label>Number of Questions</label>
+              <select id="test-count">
+                <option value="5">5 questions</option>
+                <option value="8">8 questions</option>
+                <option value="10" selected>10 questions</option>
+                <option value="15">15 questions</option>
+                <option value="20">20 questions</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Difficulty</label>
+              <select id="test-diff">
+                <option value="mixed" selected>Mixed levels</option>
+                <option value="easy">Easy — Recall</option>
+                <option value="medium">Medium — Application</option>
+                <option value="hard">Hard — Analysis &amp; Synthesis</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Question Types</label>
+              <select id="test-types">
+                <option value="mixed" selected>Both types</option>
+                <option value="mcq">Multiple Choice only</option>
+                <option value="short">Short Answer only</option>
+              </select>
+            </div>
+          </div>
+          <button id="gen-test-btn" class="btn-primary">Generate Test</button>
+        </div>
+      </div>`;
+  }
+
+  async _generateTest() {
+    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    if (this.generating) return;
+    this.generating = true;
+
+    const topic  = $("test-topic")?.value.trim() ?? "";
+    const count  = $("test-count")?.value  ?? "10";
+    const diff   = $("test-diff")?.value   ?? "mixed";
+    const types  = $("test-types")?.value  ?? "mixed";
+
+    $("panel-test").innerHTML = `
+      <div class="panel-inner center-content">
+        <div class="generating-anim">🎯</div>
+        <h3>Generating your practice test…</h3>
+        <p class="muted">Claude is crafting ${count} thoughtful questions</p>
+        <div class="spinner-bar"><div class="spinner-fill"></div></div>
+      </div>`;
+
+    const docCtx = this.store.getContext(topic || "all topics", 12000);
+
+    const diffLabel  = { mixed: "a mix of easy, medium, and hard", easy: "easy (recall/recognition)", medium: "medium (application)", hard: "hard (analysis, evaluation, synthesis)" }[diff];
+    const typesLabel = { mixed: "a mix of multiple choice and short answer", mcq: "multiple choice only", short: "short answer only" }[types];
+
+    const userMsg = `Generate exactly ${count} questions about "${topic || "all major topics"}" at ${diffLabel} difficulty, as ${typesLabel}.
+
+Study material:
+${docCtx}
+
+Return only the JSON. Make each question test genuine understanding.`;
+
+    try {
+      const raw     = await generate({ messages: [{ role: "user", content: userMsg }], mode: "test" });
+      const parsed  = parseJSON(raw);
+      const questions = parsed.questions ?? (Array.isArray(parsed) ? parsed : null);
+      if (!questions?.length) throw new Error("No questions returned.");
+
+      this.testState = { questions, current: 0, answers: {}, score: 0, total: questions.length };
+      this._renderQuestion();
+    } catch (err) {
+      $("panel-test").innerHTML = `
+        <div class="panel-inner center-content">
+          <div style="font-size:2.5rem">⚠️</div>
+          <h3>Could not generate test</h3>
+          <p class="muted">${err.message}</p>
+          <button id="restart-test-btn" class="btn-secondary">Try Again</button>
+        </div>`;
+    }
+    this.generating = false;
+  }
+
+  _renderQuestion() {
+    const { questions, current } = this.testState;
+    const q    = questions[current];
+    const isMCQ = q.type === "mcq";
+
+    $("panel-test").innerHTML = `
+      <div class="panel-inner">
+        <div class="test-progress">
+          <div class="test-progress-bar">
+            <div class="test-progress-fill" style="width:${(current / this.testState.total) * 100}%"></div>
+          </div>
+          <span class="test-progress-label">Question ${current + 1} of ${this.testState.total}</span>
+        </div>
+        <div class="question-card">
+          <div class="question-meta">
+            <span class="badge badge-diff-${q.difficulty}">${q.difficulty}</span>
+            <span class="badge badge-topic">${q.topic ?? "General"}</span>
+            ${q.needs_memorization ? '<span class="badge badge-mem">📌 Memorisation required</span>' : ""}
+          </div>
+          <div class="question-text">${q.question}</div>
+          ${isMCQ ? `
+            <div class="mcq-options">
+              ${(q.options ?? []).map(opt => `
+                <button class="mcq-opt" data-letter="${opt[0]}" data-correct="${q.correct}">${opt}</button>
+              `).join("")}
+            </div>
+            <div class="question-feedback hidden" id="q-feedback"></div>
+          ` : `
+            <div class="short-answer-area">
+              <textarea id="short-input" placeholder="Write your answer here…" rows="5"></textarea>
+              <button id="submit-short-btn" class="btn-primary">Submit Answer</button>
+            </div>
+            <div class="question-feedback hidden" id="q-feedback"></div>
+          `}
+        </div>
+        <div class="test-nav hidden" id="test-nav">
+          <button id="next-q-btn" class="btn-primary">
+            ${current + 1 < this.testState.total ? "Next Question →" : "See Results"}
+          </button>
+        </div>
+      </div>`;
+  }
+
+  _selectMCQ(btn) {
+    if (btn.dataset.answered) return;
+    const q       = this.testState.questions[this.testState.current];
+    const chosen  = btn.dataset.letter;
+    const correct = q.correct;
+    const isRight = chosen === correct;
+
+    document.querySelectorAll(".mcq-opt").forEach(b => {
+      b.dataset.answered = "1";
+      if (b.dataset.letter === correct)       b.classList.add("correct");
+      else if (b === btn && !isRight)          b.classList.add("wrong");
+    });
+
+    this.testState.answers[this.testState.current] = { type: "mcq", chosen, correct, isRight };
+    if (isRight) this.testState.score++;
+
+    const fb = $("q-feedback");
+    fb.classList.remove("hidden");
+    if (isRight) {
+      fb.className  = "question-feedback feedback-correct";
+      fb.innerHTML  = `<strong>✅ Correct!</strong> ${q.brief_explanation ?? ""}`;
+    } else {
+      fb.className  = "question-feedback feedback-wrong";
+      fb.innerHTML  = `<strong>❌ Incorrect.</strong> The correct answer is <strong>${correct}</strong>.<br>${md(q.full_explanation ?? q.brief_explanation ?? "")}`;
+    }
+    $("test-nav").classList.remove("hidden");
+  }
+
+  _submitShortAnswer() {
+    const val = $("short-input")?.value.trim();
+    if (!val) return;
+
+    const q = this.testState.questions[this.testState.current];
+    this.testState.answers[this.testState.current] = { type: "short", given: val };
+
+    const fb = $("q-feedback");
+    fb.classList.remove("hidden");
+    fb.className = "question-feedback feedback-info";
+
+    const keyPoints = (q.key_points ?? []).map(p => `<li>${p}</li>`).join("");
+    fb.innerHTML = `
+      <strong>📖 Model Answer</strong>
+      <div class="model-answer">${md(q.model_answer ?? "")}</div>
+      ${keyPoints ? `<strong>Key Points to Cover:</strong><ul>${keyPoints}</ul>` : ""}
+      <div class="self-grade">
+        <span>How did you do?</span>
+        <button class="sg-btn sg-good" data-q="${this.testState.current}" data-val="1">✅ Got it</button>
+        <button class="sg-btn sg-ok"   data-q="${this.testState.current}" data-val="0.5">🟡 Partially</button>
+        <button class="sg-btn sg-bad"  data-q="${this.testState.current}" data-val="0">❌ Missed it</button>
+      </div>`;
+
+    fb.querySelectorAll(".sg-btn").forEach(b => {
+      b.addEventListener("click", () => {
+        const qIdx = parseInt(b.dataset.q);
+        this.testState.answers[qIdx].selfScore = parseFloat(b.dataset.val);
+        this.testState.score += parseFloat(b.dataset.val);
+        fb.querySelectorAll(".sg-btn").forEach(x => x.disabled = true);
+        b.classList.add("selected");
+        $("test-nav").classList.remove("hidden");
+      });
+    });
+  }
+
+  _nextQuestion() {
+    this.testState.current++;
+    if (this.testState.current >= this.testState.total) this._renderResults();
+    else this._renderQuestion();
+  }
+
+  _renderResults() {
+    const { score, total, questions, answers } = this.testState;
+    const pct   = Math.round((score / total) * 100);
+    const emoji = pct >= 80 ? "🏆" : pct >= 60 ? "🎯" : "📚";
+    const msg   = pct >= 80 ? "Excellent work!" : pct >= 60 ? "Good progress — keep going!" : "Keep at it — you'll get there!";
+
+    const breakdown = questions.map((q, i) => {
+      const a    = answers[i] ?? {};
+      const icon = a.type === "mcq"
+        ? (a.isRight ? "✅" : "❌")
+        : (a.selfScore >= 1 ? "✅" : a.selfScore > 0 ? "🟡" : "❌");
+      return `
+        <div class="result-item">
+          <span class="result-icon">${icon}</span>
+          <div>
+            <div class="result-q">${q.question}</div>
+            <div class="result-meta">${q.topic ?? "General"} · ${q.difficulty}</div>
+          </div>
+        </div>`;
+    }).join("");
+
+    $("panel-test").innerHTML = `
+      <div class="panel-inner">
+        <div class="results-header">
+          <div class="results-emoji">${emoji}</div>
+          <h2>${pct}% — ${msg}</h2>
+          <p class="muted">Score: ${score}/${total} points</p>
+          <div class="results-bar-wrap">
+            <div class="results-bar"><div class="results-fill" style="width:${pct}%"></div></div>
+          </div>
+        </div>
+        <div class="results-breakdown">
+          <h3>Question Breakdown</h3>
+          ${breakdown}
+        </div>
+        <div class="results-actions">
+          <button id="restart-test-btn" class="btn-primary">Take Another Test</button>
+          <button id="review-chat-btn" class="btn-secondary">Ask Recal for Help</button>
+        </div>
+      </div>`;
+
+    $("review-chat-btn")?.addEventListener("click", () => {
+      const missed = questions
+        .filter((_, i) => {
+          const a = answers[i] ?? {};
+          return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1;
+        })
+        .map(q => q.topic ?? q.question)
+        .join(", ");
+      this._switchMode("chat");
+      $("chat-input").value = `I just took a practice test and struggled with: ${missed}. Can you explain these topics in detail with analogies and examples?`;
+    });
+  }
+
+  // ── Study Plan ───────────────────────────────────────────────────────────────
+
+  _bindPlan() {
+    $("panel-plan").addEventListener("click", e => {
+      if (e.target.id === "gen-plan-btn")  this._generatePlan();
+      if (e.target.id === "reset-plan-btn") this._renderPlanSetup();
+    });
+  }
+
+  _renderPlanSetup() {
+    const today = new Date().toISOString().split("T")[0];
+    $("panel-plan").innerHTML = `
+      <div class="panel-inner">
+        <div class="panel-header">
+          <h2>📅 Study Plan Creator</h2>
+          <p>Get a personalised schedule tailored to your timeline and goals.</p>
+        </div>
+        <div class="form-card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Exam / Goal Date</label>
+              <input id="plan-date" type="date" min="${today}">
+            </div>
+            <div class="form-group">
+              <label>Daily Study Hours</label>
+              <select id="plan-hours">
+                <option value="1">1 hour / day</option>
+                <option value="2" selected>2 hours / day</option>
+                <option value="3">3 hours / day</option>
+                <option value="4">4+ hours / day</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Weak areas or priorities (optional)</label>
+            <textarea id="plan-focus" rows="3" placeholder="e.g. I understand topic X but struggle with Y and Z…"></textarea>
+          </div>
+          <button id="gen-plan-btn" class="btn-primary">Create My Study Plan</button>
+        </div>
+      </div>`;
+  }
+
+  async _generatePlan() {
+    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    if (this.generating) return;
+    this.generating = true;
+
+    const dateVal = $("plan-date")?.value;
+    const hours   = $("plan-hours")?.value ?? "2";
+    const focus   = $("plan-focus")?.value.trim() ?? "";
+
+    const today  = new Date();
+    const target = dateVal ? new Date(dateVal) : null;
+    const days   = target ? Math.ceil((target - today) / 86400000) : null;
+
+    const panel = $("panel-plan");
+    panel.innerHTML = `
+      <div class="panel-inner center-content">
+        <div class="generating-anim">📅</div>
+        <h3>Building your personalised study plan…</h3>
+        <div class="spinner-bar"><div class="spinner-fill"></div></div>
+      </div>`;
+
+    const docCtx = this.store.getOverview(10000);
+    const userMsg = `Create a detailed, practical study plan.
+
+Student details:
+- ${days ? `Days until exam: ${days} (target: ${dateVal})` : "No specific deadline — general ongoing plan"}
+- Daily available study time: ${hours} hour(s)
+${focus ? `- Student notes: ${focus}` : ""}
+
+Study materials overview:
+${docCtx}
+
+Build a complete, day-by-day plan (or week-by-week if > 14 days) with:
+1. All topics and subtopics identified and prioritised
+2. Spaced repetition schedule — revisit key topics multiple times
+3. Active recall techniques for each topic type
+4. Concrete daily tasks with checkboxes
+5. Review sessions and buffer time
+6. Motivational milestones
+
+Use markdown tables, headers, and task checkboxes.`;
+
+    try {
+      const wrapper   = document.createElement("div");
+      wrapper.className = "panel-inner plan-output";
+      wrapper.innerHTML = `<div id="plan-md"></div>
+        <div class="plan-actions">
+          <button id="reset-plan-btn" class="btn-secondary">Create New Plan</button>
+        </div>`;
+      panel.innerHTML = "";
+      panel.appendChild(wrapper);
+
+      const planMd = $("plan-md");
+      let   full   = "";
+
+      await streamChat(
+        { messages: [{ role: "user", content: userMsg }], mode: "plan", temperature: 0.6 },
+        delta => {
+          full += delta;
+          planMd.innerHTML = md(full);
+          scrollEnd(panel);
+        }
+      );
+    } catch (err) {
+      panel.innerHTML = `
+        <div class="panel-inner center-content">
+          <div>⚠️</div><h3>Error</h3>
+          <p class="muted">${err.message}</p>
+          <button id="reset-plan-btn" class="btn-secondary">Try Again</button>
+        </div>`;
+    }
+    this.generating = false;
+  }
+
+  // ── Topics ────────────────────────────────────────────────────────────────────
+
+  _renderTopicsEmpty() {
+    $("panel-topics").innerHTML = `
+      <div class="panel-inner center-content">
+        <div style="font-size:3rem">📊</div>
+        <h3>${this.store.hasContent ? "Analysing materials…" : "No Materials Yet"}</h3>
+        <p class="muted">${this.store.hasContent ? "Claude is extracting your topic map." : "Upload study materials to see a topic breakdown."}</p>
+      </div>`;
+  }
+
+  async _extractTopics() {
+    if (!this.store.hasContent || this.generating) return;
+    this.generating = true;
+    this._renderTopicsEmpty();
+
+    const docCtx = this.store.getOverview(10000);
+    const userMsg = `Analyse these study materials and extract a complete topic map.
+
+Materials:
+${docCtx}
+
+Be exhaustive. Return only JSON.`;
+
+    try {
+      const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "topics" });
+      const parsed = parseJSON(raw);
+      this.topicsData = parsed.topics ?? (Array.isArray(parsed) ? parsed : null);
+      if (!this.topicsData?.length) throw new Error("No topics extracted.");
+      this._renderTopics();
+    } catch (err) {
+      $("panel-topics").innerHTML = `
+        <div class="panel-inner center-content">
+          <div>⚠️</div><h3>Could not extract topics</h3>
+          <p class="muted">${err.message}</p>
+          <button onclick="window.app._extractTopics()" class="btn-secondary">Retry</button>
+        </div>`;
+    }
+    this.generating = false;
+  }
+
+  _renderTopics() {
+    const impColor = { high: "var(--clr-error)", medium: "var(--clr-warning)", low: "var(--clr-success)" };
+
+    const cards = this.topicsData.map((t, i) => {
+      const subtopics = (t.subtopics ?? []).map(s => `
+        <div class="subtopic">
+          <input type="checkbox" id="st-${i}-${s.replace(/\s/g,"-")}" class="subtopic-check">
+          <label for="st-${i}-${s.replace(/\s/g,"-")}">${s}</label>
+        </div>`).join("");
+      const prereqs = (t.prerequisites ?? []).length
+        ? `<div class="topic-prereqs">📋 Prereqs: ${t.prerequisites.join(", ")}</div>`
+        : "";
+      return `
+        <div class="topic-card" data-importance="${t.importance}">
+          <div class="topic-header">
+            <div class="topic-dot" style="background:${impColor[t.importance] ?? "var(--clr-primary)"}"></div>
+            <h3 class="topic-name">${t.name}</h3>
+            <span class="badge badge-diff-${t.importance}">${t.importance} priority</span>
+            <button class="topic-study-btn" data-topic="${t.name}" title="Explain this topic">💬</button>
+          </div>
+          ${t.summary ? `<p class="topic-summary">${t.summary}</p>` : ""}
+          ${prereqs}
+          ${subtopics ? `<div class="subtopics">${subtopics}</div>` : ""}
+        </div>`;
+    }).join("");
+
+    $("panel-topics").innerHTML = `
+      <div class="panel-inner">
+        <div class="panel-header">
+          <h2>📊 Topic Map</h2>
+          <p>${this.topicsData.length} topics found. Tick off subtopics as you master them.</p>
+        </div>
+        <div class="topics-grid">${cards}</div>
+      </div>`;
+
+    document.querySelectorAll(".topic-study-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._switchMode("chat");
+        $("chat-input").value = `Explain "${btn.dataset.topic}" in detail with analogies and concrete examples from my study materials.`;
+      });
+    });
+
+    document.querySelectorAll(".subtopic-check").forEach(cb => {
+      const key = "recal-cb-" + cb.id;
+      cb.checked = localStorage.getItem(key) === "1";
+      cb.addEventListener("change", () => localStorage.setItem(key, cb.checked ? "1" : "0"));
+    });
+  }
+
+  // ── Toast ────────────────────────────────────────────────────────────────────
+
+  _toast(msg, type = "info") {
+    const el = document.createElement("div");
+    el.className  = `toast toast-${type}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
+    setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3000);
+  }
+}
+
+const app = new RecalApp();
+window.app = app;
