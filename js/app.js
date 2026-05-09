@@ -106,9 +106,9 @@ class CampusBridgeApp {
     this._topicsLoading = false;
     this.topicsData     = null;
     this.testState      = null;
-    // Accumulated per-topic scores from completed tests {topic: {score, total}}
     this.masteryScores  = {};
 
+    this._initUser();
     this._bindTheme();
     this._bindSidebarMobile();
     this._bindSidebar();
@@ -120,6 +120,27 @@ class CampusBridgeApp {
     this._renderTestSetup();
     this._renderPlanSetup();
     this._renderMasteryEmpty();
+  }
+
+  // ── User memory ───────────────────────────────────────────────────────────────
+
+  _initUser() {
+    let id = localStorage.getItem("cb-user-id");
+    if (!id) {
+      id = crypto.randomUUID
+        ? crypto.randomUUID()
+        : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      localStorage.setItem("cb-user-id", id);
+    }
+    this.userId = id;
+    try {
+      const saved = localStorage.getItem(`cb-mastery-${id}`);
+      if (saved) this.masteryScores = JSON.parse(saved);
+    } catch {}
+  }
+
+  _saveMastery() {
+    localStorage.setItem(`cb-mastery-${this.userId}`, JSON.stringify(this.masteryScores));
   }
 
   // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -289,8 +310,9 @@ class CampusBridgeApp {
     document.querySelectorAll(".panel").forEach(p =>
       p.classList.toggle("active", p.id === `panel-${mode}`)
     );
-    if (mode === "mastery" && !this.topicsData && this.store.hasContent) {
-      this._extractMastery();
+    if (mode === "mastery") {
+      if (this.topicsData) this._renderMastery();
+      else if (this.store.hasContent) this._extractMastery();
     }
   }
 
@@ -471,12 +493,13 @@ class CampusBridgeApp {
     const diffLabel = { mixed: "a mix of easy, medium, and hard", easy: "easy (recall)", medium: "medium (application)", hard: "hard (analysis)" }[diff];
     const typeLabel = { mixed: "a mix of multiple choice and short answer", mcq: "multiple choice only", short: "short answer only" }[types];
 
-    // Include weak areas to focus test on them
-    const weakTopics = Object.entries(this.masteryScores)
+    const weakTopics  = Object.entries(this.masteryScores)
       .filter(([, v]) => v.pct < 0.6).map(([t]) => t).join(", ");
+    const topicNames  = this.topicsData?.map(t => t.name).join(", ") ?? "";
 
     const userMsg = `Generate exactly ${count} questions about "${topic || "all major topics"}" at ${diffLabel} difficulty, as ${typeLabel}.
 ${weakTopics ? `\nFocus more questions on these weak areas: ${weakTopics}` : ""}
+${topicNames ? `\nTag each question's "topic" field using ONLY these exact names: ${topicNames}` : ""}
 
 Study material:
 ${docCtx}
@@ -626,6 +649,8 @@ Return only the JSON.`;
       this.masteryScores[topic].pct =
         this.masteryScores[topic].score / this.masteryScores[topic].total;
     });
+    this._saveMastery();
+    if (this.topicsData) this._renderMastery();
 
     const breakdown = questions.map((q, i) => {
       const a    = answers[i] ?? {};
