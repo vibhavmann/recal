@@ -861,20 +861,41 @@ No prose paragraphs — tables and bullets only.`;
       </div>`;
   }
 
+  _docFingerprint() {
+    return this.store.docs.map(d => `${d.name}:${d.size}`).sort().join("|");
+  }
+
   async _extractMastery() {
     if (!this.store.hasContent) return;
     if (this._topicsLoading) return;
+
+    // Return cached topics instantly if the same documents are loaded
+    const fp   = this._docFingerprint();
+    const cKey = `cb-topics-${this.userId}-${fp}`;
+    try {
+      const cached = localStorage.getItem(cKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.length) {
+          this.topicsData = parsed;
+          this._renderMastery();
+          return;
+        }
+      }
+    } catch {}
+
     this._topicsLoading = true;
     this._renderMasteryEmpty();
 
-    const docCtx  = this.store.getOverview(10000);
-    const userMsg = `Analyse these study materials and extract a complete topic map.\n\nMaterials:\n${docCtx}\n\nReturn only JSON.`;
+    const docCtx  = this.store.getStructuredOverview(3000);
+    const userMsg = `Extract a topic map from these study materials.\n\nMaterials:\n${docCtx}\n\nReturn only JSON.`;
 
     try {
       const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "topics" });
       const parsed = parseJSON(raw);
       this.topicsData = parsed.topics ?? (Array.isArray(parsed) ? parsed : null);
       if (!this.topicsData?.length) throw new Error("No topics found — try uploading more content.");
+      localStorage.setItem(cKey, JSON.stringify(this.topicsData));
       this._renderMastery();
     } catch (err) {
       this.topicsData = null;

@@ -45,16 +45,17 @@ Schema:
 {
   "topics": [
     {
-      "name": "Main Topic Name",
-      "subtopics": ["Subtopic A", "Subtopic B"],
-      "importance": "high|medium|low",
-      "prerequisites": ["Topic that must be understood first"],
-      "summary": "1-2 sentence summary of this topic."
+      "name": "Topic Name",
+      "subtopics": ["Subtopic A", "Subtopic B", "Subtopic C"],
+      "importance": "high|medium|low"
     }
   ]
 }
 
-Guidelines: Be exhaustive. High importance = tested frequently or foundational. Include every distinct topic and subtopic.`,
+Guidelines:
+- Include every distinct topic from the materials
+- List only the 3–5 most important subtopics per topic
+- high importance = foundational or frequently tested`,
 };
 
 const CORS_HEADERS = {
@@ -93,8 +94,9 @@ export default async function handler(req) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        const maxTokens    = mode === "topics" ? 1500 : 4096;
         const claudeStream = anthropic.messages.stream({
-          model, max_tokens: 4096, temperature, system, messages,
+          model, max_tokens: maxTokens, temperature, system, messages,
         });
         for await (const event of claudeStream) {
           if (

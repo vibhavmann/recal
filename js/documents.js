@@ -122,14 +122,42 @@ export class DocumentStore {
     return selected.map(c => `[Source: ${c.docName}]\n${c.text}`).join("\n\n---\n\n");
   }
 
-  // Broad overview — first N words of each document (for study plan / topic extraction)
-  getOverview(maxWords = 10000) {
+  // Broad overview — first N words of each document (for study plan)
+  getOverview(maxWords = 8000) {
     if (!this.hasContent) return "";
     const perDoc = Math.floor(maxWords / this._docs.size);
     const parts  = [];
     for (const doc of this._docs.values()) {
       const excerpt = doc.text.split(/\s+/).slice(0, perDoc).join(" ");
       parts.push(`[Document: ${doc.name}]\n${excerpt}`);
+    }
+    return parts.join("\n\n===\n\n");
+  }
+
+  // Compact structural overview for topic extraction.
+  // Heading-rich docs: intro + heading list (very few tokens).
+  // Unstructured docs: three evenly-spaced samples.
+  getStructuredOverview(maxWords = 3000) {
+    if (!this.hasContent) return "";
+    const perDoc = Math.max(400, Math.floor(maxWords / this._docs.size));
+    const parts  = [];
+    for (const doc of this._docs.values()) {
+      const words    = doc.text.split(/\s+/).filter(Boolean);
+      const headings = [...doc.text.matchAll(/^#{1,4}\s+(.+)$/gm)].map(m => m[1].trim());
+      let excerpt;
+      if (headings.length >= 4) {
+        const intro = words.slice(0, 100).join(" ");
+        excerpt     = `${intro}\n\nSection headings: ${headings.slice(0, 35).join(" | ")}`;
+      } else {
+        const take  = Math.floor(perDoc / 3);
+        const third = Math.floor(words.length / 3);
+        excerpt = [
+          words.slice(0, take).join(" "),
+          words.slice(third, third + take).join(" "),
+          words.slice(third * 2, third * 2 + take).join(" "),
+        ].filter(Boolean).join("\n…\n");
+      }
+      parts.push(`[${doc.name}]\n${excerpt}`);
     }
     return parts.join("\n\n===\n\n");
   }
