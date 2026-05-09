@@ -1,4 +1,4 @@
-// app.js — Recal main controller
+// app.js — CampusBridge main controller
 import { DocumentStore } from "./documents.js";
 import { marked }        from "https://esm.run/marked";
 import DOMPurify         from "https://esm.run/dompurify";
@@ -27,30 +27,6 @@ function parseJSON(raw) {
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────────
-
-// Fetch top-5 DuckDuckGo results for a query
-async function webSearch(query) {
-  try {
-    const res  = await fetch("/api/search", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ query }),
-    });
-    const data = await res.json();
-    return data.results ?? [];
-  } catch {
-    return [];
-  }
-}
-
-function formatWebResults(results) {
-  if (!results.length) return "";
-  const lines = results.map((r, i) =>
-    `${i + 1}. **${r.title}**${r.url ? " — " + r.url : ""}\n   ${r.snippet}`
-  );
-  return `=== Web Search Results ===\n${lines.join("\n\n")}`;
-}
-
 
 async function streamChat({ messages, mode = "chat", temperature = 0.7 }, onChunk) {
   const res = await fetch("/api/chat", {
@@ -95,49 +71,45 @@ async function generate({ messages, mode, temperature = 0.3 }) {
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ messages, mode, temperature }),
   });
-  // Read as text first — Vercel can return plain-text errors on crashes
   const text = await res.text();
   let data;
   try { data = JSON.parse(text); }
   catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
   if (data.error) throw new Error(data.error);
-  if (!data.content && data.content !== "") throw new Error("Empty response from server — please try again.");
+  if (!data.content && data.content !== "") throw new Error("Empty response — please try again.");
   return data.content;
 }
 
-// ─── Welcome HTML (reused by new-chat) ───────────────────────────────────────
+// ─── Welcome HTML ─────────────────────────────────────────────────────────────
 
 const WELCOME_HTML = `
   <div class="welcome">
     <div class="welcome-logo">🎓</div>
-    <h2>Welcome to Recal!</h2>
-    <p>Upload your study materials, then ask me anything — or use a Quick Action in the sidebar.</p>
+    <h2>Welcome to CampusBridge!</h2>
+    <p>Upload your study materials and ask me anything — I'll explain concepts clearly and help you master them.</p>
     <div class="feature-list">
-      <div class="feature">🎯 Adaptive practice tests with detailed explanations</div>
-      <div class="feature">🃏 Flashcard decks for active recall practice</div>
-      <div class="feature">📊 Topic extraction &amp; mastery tracking</div>
-      <div class="feature">📅 Personalised study plans with spaced repetition</div>
+      <div class="feature">🎯 Adaptive practice tests that adjust to your level</div>
+      <div class="feature">💡 Concept explanations with analogies &amp; examples</div>
+      <div class="feature">📊 Per-topic mastery tracking with checkboxes</div>
+      <div class="feature">📅 Personalised study plans that update in real-time</div>
     </div>
   </div>`;
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-class RecalApp {
+class CampusBridgeApp {
   constructor() {
-    this.store            = new DocumentStore();
-    this.history          = [];
-    this.mode             = "chat";
-    this.generating       = false;
-    this._topicsLoading   = false;
-    this.testState        = null;
-    this.topicsData       = null;
-    this.fcState          = null;
-    this._fcKeyHandler    = null;
-    this.webSearchEnabled = false;
-    this._mmRendered      = false;
+    this.store          = new DocumentStore();
+    this.history        = [];
+    this.mode           = "chat";
+    this.generating     = false;
+    this._topicsLoading = false;
+    this.topicsData     = null;
+    this.testState      = null;
+    // Accumulated per-topic scores from completed tests {topic: {score, total}}
+    this.masteryScores  = {};
 
     this._bindTheme();
-    this._bindWebSearchToggle();
     this._bindSidebarMobile();
     this._bindSidebar();
     this._bindChat();
@@ -145,57 +117,33 @@ class RecalApp {
     this._bindModes();
     this._bindTest();
     this._bindPlan();
-    this._bindFlashcards();
-    this._bindMindMap();
     this._renderTestSetup();
     this._renderPlanSetup();
-    this._renderFlashcardSetup();
-    this._renderTopicsEmpty();
-    this._renderMindMapSetup();
+    this._renderMasteryEmpty();
   }
 
-  // ── Web search toggle ─────────────────────────────────────────────────────────
-
-  _bindWebSearchToggle() {
-    const btn = $("web-search-toggle");
-    if (!btn) return;
-    btn.addEventListener("click", () => {
-      this.webSearchEnabled = !this.webSearchEnabled;
-      btn.classList.toggle("active", this.webSearchEnabled);
-      btn.title = this.webSearchEnabled
-        ? "Web search ON — click to disable"
-        : "Web search OFF — click to enable";
-      this._toast(this.webSearchEnabled ? "Web search enabled" : "Web search disabled", "info");
-    });
-  }
-
-  // ── Generating state (disables interactive controls) ─────────────────────────
-
-  _setGenerating(bool) {
-    this.generating = bool;
-    const webToggle = $("web-search-toggle");
-    if (webToggle) webToggle.disabled = bool;
-    $("send-btn").disabled = bool;
-  }
-
-  // ── Theme (with localStorage persistence) ───────────────────────────────────
+  // ── Theme ─────────────────────────────────────────────────────────────────────
 
   _bindTheme() {
-    // Sync button icon with whatever theme is currently active
-    // (The <script> in <head> may have already applied the saved theme)
     const current = document.documentElement.getAttribute("data-theme") ?? "light";
     $("theme-btn").textContent = current === "dark" ? "☀️" : "🌙";
-
     $("theme-btn").addEventListener("click", () => {
       const dark = document.documentElement.getAttribute("data-theme") === "dark";
       const next = dark ? "light" : "dark";
       document.documentElement.setAttribute("data-theme", next);
       $("theme-btn").textContent = next === "dark" ? "☀️" : "🌙";
-      localStorage.setItem("recal-theme", next);
+      localStorage.setItem("cb-theme", next);
     });
   }
 
-  // ── New Chat ─────────────────────────────────────────────────────────────────
+  // ── Generating state ──────────────────────────────────────────────────────────
+
+  _setGenerating(bool) {
+    this.generating = bool;
+    $("send-btn").disabled = bool;
+  }
+
+  // ── New Chat ──────────────────────────────────────────────────────────────────
 
   _bindNewChat() {
     $("new-chat-btn").addEventListener("click", () => this._newChat());
@@ -210,7 +158,7 @@ class RecalApp {
     this._switchMode("chat");
   }
 
-  // ── Mobile sidebar drawer ─────────────────────────────────────────────────────
+  // ── Mobile sidebar ────────────────────────────────────────────────────────────
 
   _bindSidebarMobile() {
     const sidebar  = document.getElementById("sidebar");
@@ -225,17 +173,15 @@ class RecalApp {
     closeBtn?.addEventListener("click", close);
     overlay?.addEventListener("click", close);
 
-    // Close sidebar when a mode tab is clicked on mobile
     document.querySelectorAll(".mode-btn").forEach(btn =>
       btn.addEventListener("click", () => { if (window.innerWidth <= 700) close(); })
     );
-    // Close sidebar when a quick action is clicked
     document.querySelectorAll(".qa-btn").forEach(btn =>
       btn.addEventListener("click", close)
     );
   }
 
-  // ── Sidebar ──────────────────────────────────────────────────────────────────
+  // ── Sidebar / Documents ───────────────────────────────────────────────────────
 
   _bindSidebar() {
     $("upload-btn").addEventListener("click", () => $("file-input").click());
@@ -270,7 +216,7 @@ class RecalApp {
       this._finaliseDocItem(item, id, file.name, file.size);
       this._toast(`Added: ${file.name}`, "success");
       this.topicsData = null;
-      if (this.mode === "topics") this._renderTopicsEmpty();
+      if (this.mode === "mastery") this._renderMasteryEmpty();
     } catch (err) {
       item.dataset.state = "error";
       item.querySelector(".doc-status").textContent = "❌ Failed";
@@ -279,10 +225,10 @@ class RecalApp {
   }
 
   _addDocItem(name) {
-    const list  = $("doc-list");
+    const list = $("doc-list");
     list.querySelector(".empty-docs")?.remove();
     const div = document.createElement("div");
-    div.className    = "doc-item";
+    div.className     = "doc-item";
     div.dataset.state = "processing";
     div.innerHTML = `
       <span class="doc-icon">${name.endsWith(".pdf") ? "📄" : "📝"}</span>
@@ -311,98 +257,20 @@ class RecalApp {
           </div>`;
       }
       this.topicsData = null;
-      if (this.mode === "topics") this._renderTopicsEmpty();
+      if (this.mode === "mastery") this._renderMasteryEmpty();
     });
   }
 
   _quickAction(action) {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
-    if (action === "key-concepts") {
-      this._showDetailModal(
-        "Key Concepts Detail Level",
-        "How detailed should the key concepts list be?",
-        {
-          small:  ["Small", "Concise list — main concepts with one-line definitions"],
-          medium: ["Medium", "Concepts with 2-3 sentence explanations"],
-          large:  ["Large", "Full detail — definitions, explanations & examples for every concept"],
-        }
-      ).then(level => {
-        if (!level) return;
-        const prompts = {
-          small:  "List all key concepts from my study materials as a concise bulleted list. For each concept, write a single clear definition sentence only. Be comprehensive — include every significant concept.",
-          medium: "List all key concepts from my study materials. For each concept, write a 2-3 sentence explanation. Be comprehensive — do not skip any important concept.",
-          large:  "List and fully explain all key concepts from my study materials. For each concept provide: (1) a clear definition, (2) a detailed explanation of how it works or why it matters, and (3) a concrete real-world example. Be thorough — do not skip any concept.",
-        };
-        this._switchMode("chat");
-        $("chat-input").value = prompts[level];
-        this._sendMessage();
-      });
+    if (action === "generate-test") {
+      this._switchMode("test");
       return;
     }
-    if (action === "summarize") {
-      this._showDetailModal(
-        "Summary Detail Level",
-        "How detailed should the summary be?",
-        {
-          small:  ["Small", "Key points only — one paragraph per major section"],
-          medium: ["Medium", "Balanced overview — 2-3 sentences per topic"],
-          large:  ["Large", "Comprehensive — covers all sections without skipping any content"],
-        }
-      ).then(level => {
-        if (!level) return;
-        const prompts = {
-          small:  "Summarise my study materials briefly. For each major section, write one short paragraph covering only the most important points. Be concise.",
-          medium: "Summarise my study materials. For each major section or topic, write 2-3 sentences covering the key ideas. Cover all sections — do not skip any.",
-          large:  "Summarise ALL of my study materials in detail. Go through every section and topic in order — do not skip or omit any part. For each section, write a thorough summary. Use clear headings for each major topic.",
-        };
-        this._switchMode("chat");
-        $("chat-input").value = prompts[level];
-        this._sendMessage();
-      });
+    if (action === "study-plan") {
+      this._switchMode("plan");
       return;
     }
-    const prompts = {
-      "generate-test":"Generate a quick 5-question mixed practice test covering the main topics in my study materials.",
-      "study-plan":   "Create a study plan for these materials using spaced repetition principles.",
-    };
-    const text = prompts[action];
-    if (!text) return;
-    this._switchMode("chat");
-    $("chat-input").value = text;
-    this._sendMessage();
-  }
-
-  // Generic detail-level modal. options = { key: ["Label", "Description"], ... }
-  _showDetailModal(title, subtitle, options) {
-    return new Promise(resolve => {
-      const overlay = document.createElement("div");
-      overlay.className = "modal-overlay";
-      const opts = Object.entries(options).map(([key, [label, desc]]) => `
-        <button class="modal-opt" data-level="${key}">
-          <strong>${label}</strong>
-          <span>${desc}</span>
-        </button>`).join("");
-      overlay.innerHTML = `
-        <div class="modal-box" role="dialog" aria-modal="true">
-          <h3>${title}</h3>
-          <p>${subtitle}</p>
-          <div class="modal-opts">${opts}</div>
-          <button class="modal-cancel">Cancel</button>
-        </div>`;
-      document.body.appendChild(overlay);
-      requestAnimationFrame(() => overlay.classList.add("show"));
-
-      const close = level => {
-        overlay.classList.remove("show");
-        setTimeout(() => overlay.remove(), 250);
-        resolve(level);
-      };
-      overlay.querySelectorAll(".modal-opt").forEach(btn =>
-        btn.addEventListener("click", () => close(btn.dataset.level))
-      );
-      overlay.querySelector(".modal-cancel").addEventListener("click", () => close(null));
-      overlay.addEventListener("click", e => { if (e.target === overlay) close(null); });
-    });
   }
 
   // ── Modes ─────────────────────────────────────────────────────────────────────
@@ -415,21 +283,15 @@ class RecalApp {
 
   _switchMode(mode) {
     this.mode = mode;
-    // Remove flashcard keyboard handler when leaving flashcards
-    if (mode !== "flashcards" && this._fcKeyHandler) {
-      document.removeEventListener("keydown", this._fcKeyHandler);
-      this._fcKeyHandler = null;
-    }
     document.querySelectorAll(".mode-btn").forEach(b =>
       b.classList.toggle("active", b.dataset.mode === mode)
     );
     document.querySelectorAll(".panel").forEach(p =>
       p.classList.toggle("active", p.id === `panel-${mode}`)
     );
-    if (mode === "topics" && !this.topicsData && this.store.hasContent) {
-      this._extractTopics();
+    if (mode === "mastery" && !this.topicsData && this.store.hasContent) {
+      this._extractMastery();
     }
-    if (mode === "mindmap" && !this._mmRendered) this._renderMindMapSetup();
   }
 
   // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -437,7 +299,6 @@ class RecalApp {
   _bindChat() {
     const input = $("chat-input");
     const btn   = $("send-btn");
-
     input.addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._sendMessage(); }
     });
@@ -462,26 +323,9 @@ class RecalApp {
     const aiEl = this._appendMsg("ai", "", true);
     const box  = aiEl.querySelector(".msg-content");
 
-    const useWeb = this.webSearchEnabled;
-    if (useWeb) box.innerHTML = `<span class="status-msg">🌐 Searching the web…</span>`;
-
-    const [docCtx, webResults] = await Promise.all([
-      Promise.resolve(this.store.getContext(text, useWeb ? 8000 : 12000)),
-      useWeb ? webSearch(text) : Promise.resolve([]),
-    ]);
-
-    const webCtx = formatWebResults(webResults);
-
+    const docCtx = this.store.getContext(text, 12000);
     let userContent = text;
-    const parts = [];
-    if (docCtx)  parts.push(`=== Study Materials ===\n${docCtx}`);
-    if (webCtx)  parts.push(webCtx);
-    if (parts.length) userContent = `${parts.join("\n\n")}\n\n---\n\nMy question: ${text}`;
-
-    // When web search is off, tell Claude to suggest it if the question is out of scope
-    if (!useWeb) {
-      userContent += "\n\n[System note: Web search is currently disabled. If this question falls outside the uploaded study materials, politely say so and suggest the user enable the web search toggle in the header.]";
-    }
+    if (docCtx) userContent = `=== Study Materials ===\n${docCtx}\n\n---\n\nMy question: ${text}`;
 
     const messages = [
       ...this.history.slice(-8),
@@ -540,221 +384,6 @@ class RecalApp {
     return div;
   }
 
-  // ── Flashcards ────────────────────────────────────────────────────────────────
-
-  _bindFlashcards() {
-    $("panel-flashcards").addEventListener("click", e => {
-      const id = e.target.id;
-      if (id === "gen-fc-btn")      this._generateFlashcards();
-      if (id === "restart-fc-btn")  this._renderFlashcardSetup();
-      if (id === "fc-prev-btn")     this._fcNav(-1);
-      if (id === "fc-next-btn")     this._fcNav(1);
-      if (id === "fc-shuffle-btn")  this._fcShuffle();
-      if (id === "fc-review-btn")   this._fcRestart();
-      if (e.target.closest("#fc-card")) this._fcFlip();
-    });
-  }
-
-  _renderFlashcardSetup() {
-    this.fcState = null;
-    if (this._fcKeyHandler) {
-      document.removeEventListener("keydown", this._fcKeyHandler);
-      this._fcKeyHandler = null;
-    }
-    $("panel-flashcards").innerHTML = `
-      <div class="panel-inner">
-        <div class="panel-header">
-          <h2>🃏 Flashcards</h2>
-          <p>Generate a deck from your materials for active recall practice.</p>
-        </div>
-        <div class="form-card">
-          <div class="form-row">
-            <div class="form-group">
-              <label>Topic / Focus Area</label>
-              <input id="fc-topic" type="text" placeholder="e.g. Mitosis, Chapter 2 — or leave blank for all topics">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Number of Cards</label>
-              <select id="fc-count">
-                <option value="4">4 cards</option>
-                <option value="6">6 cards</option>
-                <option value="8" selected>8 cards</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Card Style</label>
-              <select id="fc-style">
-                <option value="mixed" selected>Mixed (terms &amp; Q&amp;A)</option>
-                <option value="concept">Concept → Explanation</option>
-                <option value="qa">Question → Answer</option>
-              </select>
-            </div>
-          </div>
-          <button id="gen-fc-btn" class="btn-primary">Generate Flashcards</button>
-        </div>
-      </div>`;
-  }
-
-  async _generateFlashcards() {
-    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
-
-    const topic = $("fc-topic")?.value.trim() ?? "";
-    const count = $("fc-count")?.value ?? "16";
-    const style = $("fc-style")?.value ?? "mixed";
-
-    $("panel-flashcards").innerHTML = `
-      <div class="panel-inner center-content">
-        <div class="generating-anim">🃏</div>
-        <h3>Creating your flashcard deck…</h3>
-        <p class="muted">Generating ${count} cards${topic ? ` on "${topic}"` : ""}</p>
-        <div class="spinner-bar"><div class="spinner-fill"></div></div>
-      </div>`;
-
-    const docCtx = this.store.getContext(topic || "all topics", 10000);
-    const styleDesc = {
-      mixed:   "a mix of term/concept cards and question-and-answer cards",
-      concept: "term or concept on the front, explanation with example on the back",
-      qa:      "a question on the front, the answer on the back",
-    }[style];
-
-    const userMsg = `Generate exactly ${count} flashcards about "${topic || "all major topics"}" using ${styleDesc} style.
-
-Study material:
-${docCtx}
-
-Return only the JSON.`;
-
-    try {
-      const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "flashcards" });
-      const parsed = parseJSON(raw);
-      const cards  = parsed.cards ?? (Array.isArray(parsed) ? parsed : null);
-      if (!cards?.length) throw new Error("No cards returned.");
-
-      this.fcState = { cards, current: 0, flipped: false };
-      this._renderFlashcard();
-    } catch (err) {
-      $("panel-flashcards").innerHTML = `
-        <div class="panel-inner center-content">
-          <div style="font-size:2.5rem">⚠️</div>
-          <h3>Could not generate flashcards</h3>
-          <p class="muted">${err.message}</p>
-          <button id="restart-fc-btn" class="btn-secondary">Try Again</button>
-        </div>`;
-    }
-  }
-
-  _renderFlashcard() {
-    const { cards, current, flipped } = this.fcState;
-    const card   = cards[current];
-    const isLast = current === cards.length - 1;
-    const pct    = Math.round(((current + 1) / cards.length) * 100);
-
-    $("panel-flashcards").innerHTML = `
-      <div class="panel-inner fc-layout">
-        <div class="fc-header">
-          <button id="restart-fc-btn" class="btn-secondary btn-sm-text">← New Deck</button>
-          <div class="fc-meta">
-            <span class="badge badge-topic">${card.topic ?? "General"}</span>
-            <span class="badge badge-diff-${card.difficulty ?? "medium"}">${card.difficulty ?? "medium"}</span>
-          </div>
-          <span class="fc-counter">${current + 1} / ${cards.length}</span>
-        </div>
-
-        <div class="fc-progress-wrap">
-          <div class="fc-progress-bar">
-            <div class="fc-progress-fill" style="width:${pct}%"></div>
-          </div>
-        </div>
-
-        <div class="flashcard-viewport" id="fc-card" role="button" tabindex="0"
-             title="Click or press Space to flip">
-          <div class="fc-inner${flipped ? " is-flipped" : ""}">
-            <div class="fc-face fc-front">
-              <div class="fc-hint">TAP TO REVEAL</div>
-              <div class="fc-term">${card.front}</div>
-            </div>
-            <div class="fc-face fc-back">
-              <div class="fc-hint">ANSWER</div>
-              <div class="fc-explanation">${md(card.back)}</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="fc-controls">
-          <button id="fc-prev-btn" class="btn-secondary" ${current === 0 ? "disabled" : ""}>← Prev</button>
-          <button id="fc-shuffle-btn" class="btn-secondary">🔀 Shuffle</button>
-          <button id="fc-next-btn" class="btn-primary">
-            ${isLast ? "Complete 🎉" : "Next →"}
-          </button>
-        </div>
-        <p class="fc-tip muted">← → to navigate · Space to flip</p>
-      </div>`;
-
-    // Keyboard shortcuts — attach fresh handler each render
-    if (this._fcKeyHandler) document.removeEventListener("keydown", this._fcKeyHandler);
-    this._fcKeyHandler = (e) => {
-      if (e.key === "ArrowLeft")              this._fcNav(-1);
-      if (e.key === "ArrowRight")             this._fcNav(1);
-      if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); this._fcFlip(); }
-    };
-    document.addEventListener("keydown", this._fcKeyHandler);
-  }
-
-  _fcFlip() {
-    if (!this.fcState) return;
-    this.fcState.flipped = !this.fcState.flipped;
-    document.querySelector(".fc-inner")?.classList.toggle("is-flipped", this.fcState.flipped);
-  }
-
-  _fcNav(dir) {
-    if (!this.fcState) return;
-    const next = this.fcState.current + dir;
-    if (dir > 0 && next >= this.fcState.cards.length) { this._fcShowComplete(); return; }
-    if (next < 0) return;
-    this.fcState.current = next;
-    this.fcState.flipped  = false;
-    this._renderFlashcard();
-  }
-
-  _fcShuffle() {
-    if (!this.fcState) return;
-    const arr = this.fcState.cards;
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    this.fcState.current = 0;
-    this.fcState.flipped  = false;
-    this._renderFlashcard();
-    this._toast("Deck shuffled!", "success");
-  }
-
-  _fcShowComplete() {
-    if (this._fcKeyHandler) {
-      document.removeEventListener("keydown", this._fcKeyHandler);
-      this._fcKeyHandler = null;
-    }
-    $("panel-flashcards").innerHTML = `
-      <div class="panel-inner center-content fc-complete">
-        <div class="fc-complete-emoji">🎉</div>
-        <h2>Deck Complete!</h2>
-        <p class="muted">You reviewed all ${this.fcState.cards.length} cards. Great work!</p>
-        <div class="fc-complete-actions">
-          <button id="fc-review-btn" class="btn-primary">Review Again</button>
-          <button id="restart-fc-btn" class="btn-secondary">New Deck</button>
-        </div>
-      </div>`;
-  }
-
-  _fcRestart() {
-    if (!this.fcState) return;
-    this.fcState.current = 0;
-    this.fcState.flipped  = false;
-    this._renderFlashcard();
-  }
-
   // ── Practice Test ─────────────────────────────────────────────────────────────
 
   _bindTest() {
@@ -769,17 +398,25 @@ Return only the JSON.`;
 
   _renderTestSetup() {
     this.testState = null;
+    // Build weak-topic hint from mastery scores
+    const weakHint = Object.entries(this.masteryScores)
+      .filter(([, v]) => v.pct < 0.6)
+      .map(([topic]) => topic)
+      .join(", ");
+
     $("panel-test").innerHTML = `
       <div class="panel-inner">
         <div class="panel-header">
-          <h2>🎯 Practice Test Generator</h2>
-          <p>Generate a custom quiz from your study materials.</p>
+          <h2>🎯 Adaptive Practice Test</h2>
+          <p>Tests adapt to your level and focus on areas where you need the most practice.</p>
         </div>
         <div class="form-card">
           <div class="form-row">
             <div class="form-group">
               <label>Topic / Focus Area</label>
-              <input id="test-topic" type="text" placeholder="e.g. Chapter 3, Photosynthesis — or leave blank for all topics">
+              <input id="test-topic" type="text"
+                value="${weakHint}"
+                placeholder="e.g. Chapter 3, Photosynthesis — or leave blank for all topics">
             </div>
           </div>
           <div class="form-row three-col">
@@ -797,7 +434,7 @@ Return only the JSON.`;
                 <option value="mixed" selected>Mixed levels</option>
                 <option value="easy">Easy — Recall</option>
                 <option value="medium">Medium — Application</option>
-                <option value="hard">Hard — Analysis &amp; Synthesis</option>
+                <option value="hard">Hard — Analysis</option>
               </select>
             </div>
             <div class="form-group">
@@ -809,7 +446,7 @@ Return only the JSON.`;
               </select>
             </div>
           </div>
-          <button id="gen-test-btn" class="btn-primary">Generate Test</button>
+          <button id="gen-test-btn" class="btn-primary">Generate Adaptive Test</button>
         </div>
       </div>`;
   }
@@ -825,16 +462,21 @@ Return only the JSON.`;
     $("panel-test").innerHTML = `
       <div class="panel-inner center-content">
         <div class="generating-anim">🎯</div>
-        <h3>Generating your practice test…</h3>
-        <p class="muted">Crafting ${count} thoughtful questions</p>
+        <h3>Generating your adaptive test…</h3>
+        <p class="muted">Crafting ${count} questions${topic ? ` on "${topic}"` : ""}</p>
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
 
-    const docCtx     = this.store.getContext(topic || "all topics", 12000);
-    const diffLabel  = { mixed: "a mix of easy, medium, and hard", easy: "easy (recall)", medium: "medium (application)", hard: "hard (analysis & synthesis)" }[diff];
-    const typesLabel = { mixed: "a mix of multiple choice and short answer", mcq: "multiple choice only", short: "short answer only" }[types];
+    const docCtx    = this.store.getContext(topic || "all topics", 10000);
+    const diffLabel = { mixed: "a mix of easy, medium, and hard", easy: "easy (recall)", medium: "medium (application)", hard: "hard (analysis)" }[diff];
+    const typeLabel = { mixed: "a mix of multiple choice and short answer", mcq: "multiple choice only", short: "short answer only" }[types];
 
-    const userMsg = `Generate exactly ${count} questions about "${topic || "all major topics"}" at ${diffLabel} difficulty, as ${typesLabel}.
+    // Include weak areas to focus test on them
+    const weakTopics = Object.entries(this.masteryScores)
+      .filter(([, v]) => v.pct < 0.6).map(([t]) => t).join(", ");
+
+    const userMsg = `Generate exactly ${count} questions about "${topic || "all major topics"}" at ${diffLabel} difficulty, as ${typeLabel}.
+${weakTopics ? `\nFocus more questions on these weak areas: ${weakTopics}` : ""}
 
 Study material:
 ${docCtx}
@@ -842,8 +484,8 @@ ${docCtx}
 Return only the JSON.`;
 
     try {
-      const raw     = await generate({ messages: [{ role: "user", content: userMsg }], mode: "test" });
-      const parsed  = parseJSON(raw);
+      const raw       = await generate({ messages: [{ role: "user", content: userMsg }], mode: "test" });
+      const parsed    = parseJSON(raw);
       const questions = parsed.questions ?? (Array.isArray(parsed) ? parsed : null);
       if (!questions?.length) throw new Error("No questions returned.");
       this.testState = { questions, current: 0, answers: {}, score: 0, total: questions.length };
@@ -904,8 +546,8 @@ Return only the JSON.`;
 
   _selectMCQ(btn) {
     if (btn.dataset.answered) return;
-    const q       = this.testState.questions[this.testState.current];
-    const chosen  = btn.dataset.letter;
+    const q      = this.testState.questions[this.testState.current];
+    const chosen = btn.dataset.letter;
     const correct = q.correct;
     const isRight = chosen === correct;
 
@@ -973,6 +615,18 @@ Return only the JSON.`;
     const emoji = pct >= 80 ? "🏆" : pct >= 60 ? "🎯" : "📚";
     const msg   = pct >= 80 ? "Excellent work!" : pct >= 60 ? "Good progress — keep going!" : "Keep at it — you'll get there!";
 
+    // Update running mastery scores
+    questions.forEach((q, i) => {
+      const a     = answers[i] ?? {};
+      const topic = q.topic ?? "General";
+      if (!this.masteryScores[topic]) this.masteryScores[topic] = { score: 0, total: 0 };
+      const pts = a.type === "mcq" ? (a.isRight ? 1 : 0) : (a.selfScore ?? 0);
+      this.masteryScores[topic].score += pts;
+      this.masteryScores[topic].total += 1;
+      this.masteryScores[topic].pct =
+        this.masteryScores[topic].score / this.masteryScores[topic].total;
+    });
+
     const breakdown = questions.map((q, i) => {
       const a    = answers[i] ?? {};
       const icon = a.type === "mcq"
@@ -1001,16 +655,19 @@ Return only the JSON.`;
         <div class="results-breakdown"><h3>Question Breakdown</h3>${breakdown}</div>
         <div class="results-actions">
           <button id="restart-test-btn" class="btn-primary">Take Another Test</button>
-          <button id="review-chat-btn" class="btn-secondary">Ask Recal for Help</button>
+          <button id="review-chat-btn" class="btn-secondary">Ask CampusBridge to Explain</button>
         </div>
       </div>`;
 
     $("review-chat-btn")?.addEventListener("click", () => {
       const missed = questions
-        .filter((_, i) => { const a = answers[i] ?? {}; return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1; })
+        .filter((_, i) => {
+          const a = answers[i] ?? {};
+          return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1;
+        })
         .map(q => q.topic ?? q.question).join(", ");
       this._switchMode("chat");
-      $("chat-input").value = `I struggled with: ${missed}. Can you explain these topics with analogies and examples?`;
+      $("chat-input").value = `I got these topics wrong on my test: ${missed}. Can you explain them with analogies and concrete examples?`;
     });
   }
 
@@ -1028,8 +685,8 @@ Return only the JSON.`;
     $("panel-plan").innerHTML = `
       <div class="panel-inner">
         <div class="panel-header">
-          <h2>📅 Study Plan Creator</h2>
-          <p>Get a personalised schedule tailored to your timeline and goals.</p>
+          <h2>📅 Study Plan</h2>
+          <p>Get a personalised, adaptive schedule. CampusBridge factors in your test performance to focus on weak areas.</p>
         </div>
         <div class="form-card">
           <div class="form-row">
@@ -1048,10 +705,10 @@ Return only the JSON.`;
             </div>
           </div>
           <div class="form-group">
-            <label>Weak areas or priorities (optional)</label>
-            <textarea id="plan-focus" rows="3" placeholder="e.g. I understand topic X but struggle with Y and Z…"></textarea>
+            <label>Additional notes (optional)</label>
+            <textarea id="plan-focus" rows="3" placeholder="e.g. I struggle with topic X but understand Y well…"></textarea>
           </div>
-          <button id="gen-plan-btn" class="btn-primary">Create My Study Plan</button>
+          <button id="gen-plan-btn" class="btn-primary">Build My Study Plan</button>
         </div>
       </div>`;
   }
@@ -1063,10 +720,9 @@ Return only the JSON.`;
     const dateVal = $("plan-date")?.value;
     const hours   = $("plan-hours")?.value ?? "2";
     const focus   = $("plan-focus")?.value.trim() ?? "";
-
-    const today  = new Date();
-    const target = dateVal ? new Date(dateVal) : null;
-    const days   = target ? Math.ceil((target - today) / 86400000) : null;
+    const today   = new Date();
+    const target  = dateVal ? new Date(dateVal) : null;
+    const days    = target ? Math.ceil((target - today) / 86400000) : null;
 
     const panel = $("panel-plan");
     panel.innerHTML = `
@@ -1076,37 +732,47 @@ Return only the JSON.`;
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
 
-    // Use extracted topic names if available; otherwise pull headings from documents
     const topicContext = this.topicsData
       ? this.topicsData.map(t => {
-          const subs = t.subtopics?.length ? ` (${t.subtopics.slice(0,4).join(", ")})` : "";
+          const subs = t.subtopics?.length ? ` (${t.subtopics.slice(0, 4).join(", ")})` : "";
           return `• ${t.name}${subs}`;
         }).join("\n")
       : this.store.getTopicNamesOverview();
 
-    const userMsg = `Create a concise, actionable study plan in tabular format.
+    // Include mastery performance data
+    const weakAreas = Object.entries(this.masteryScores)
+      .filter(([, v]) => v.pct < 0.6)
+      .map(([topic, v]) => `${topic} (${Math.round(v.pct * 100)}%)`)
+      .join(", ");
+    const strongAreas = Object.entries(this.masteryScores)
+      .filter(([, v]) => v.pct >= 0.8)
+      .map(([topic]) => topic)
+      .join(", ");
+
+    const userMsg = `Create a concise adaptive study plan in tabular format.
 
 Student details:
-- ${days ? `Days until exam: ${days} (target date: ${dateVal})` : "No specific deadline — general plan"}
+- ${days ? `Days until exam: ${days} (target: ${dateVal})` : "No specific deadline"}
 - Daily study time: ${hours} hour(s)
-${focus ? `- Priorities / concerns: ${focus}` : ""}
+${focus ? `- Notes: ${focus}` : ""}
+${weakAreas ? `- Weak areas needing more focus: ${weakAreas}` : ""}
+${strongAreas ? `- Strong areas (less time needed): ${strongAreas}` : ""}
 
 Topics to cover:
 ${topicContext}
 
-Format rules:
-1. Output a markdown table with columns: Day / Date | Topics | Study Activity | Duration
-2. Add a short Spaced Repetition schedule table showing when to revisit each topic (e.g. Day 1 → Review Day 3 → Review Day 7)
-3. Keep descriptions concise — one line per cell
-4. Add a brief Tips section at the end (3-4 bullet points max)
-Do NOT write paragraphs or lengthy prose — tables and bullets only.`;
+Output:
+1. A markdown table: Day | Topics | Activity | Duration — weight weak areas more heavily
+2. A spaced repetition schedule table showing revisit days
+3. 3-4 bullet tips
+No prose paragraphs — tables and bullets only.`;
 
     try {
       const wrapper = document.createElement("div");
       wrapper.className = "panel-inner plan-output";
       wrapper.innerHTML = `<div id="plan-md"></div>
         <div class="plan-actions">
-          <button id="reset-plan-btn" class="btn-secondary">Create New Plan</button>
+          <button id="reset-plan-btn" class="btn-secondary">Rebuild Plan</button>
         </div>`;
       panel.innerHTML = "";
       panel.appendChild(wrapper);
@@ -1132,62 +798,66 @@ Do NOT write paragraphs or lengthy prose — tables and bullets only.`;
     }
   }
 
-  // ── Topics ────────────────────────────────────────────────────────────────────
+  // ── Mastery Tracking ──────────────────────────────────────────────────────────
 
-  _renderTopicsEmpty() {
-    $("panel-topics").innerHTML = `
+  _renderMasteryEmpty() {
+    $("panel-mastery").innerHTML = `
       <div class="panel-inner center-content">
         <div style="font-size:3rem">📊</div>
         <h3>${this.store.hasContent ? "Analysing materials…" : "No Materials Yet"}</h3>
         <p class="muted">${this.store.hasContent
-          ? "Claude is extracting your topic map. This takes about 10–20 seconds."
-          : "Upload study materials to see a topic breakdown."}</p>
+          ? "Extracting your topic map. Takes about 10–20 seconds."
+          : "Upload study materials to see your mastery breakdown."}</p>
       </div>`;
   }
 
-  async _extractTopics() {
+  async _extractMastery() {
     if (!this.store.hasContent) return;
-    if (this._topicsLoading) return;   // own flag — never blocked by chat/plan
-
+    if (this._topicsLoading) return;
     this._topicsLoading = true;
-    this._renderTopicsEmpty();
+    this._renderMasteryEmpty();
 
-    const docCtx = this.store.getOverview(10000);
-    const userMsg = `Analyse these study materials and extract a complete topic map.
-
-Materials:
-${docCtx}
-
-Be exhaustive — extract every significant topic and subtopic. Return only JSON.`;
+    const docCtx  = this.store.getOverview(10000);
+    const userMsg = `Analyse these study materials and extract a complete topic map.\n\nMaterials:\n${docCtx}\n\nReturn only JSON.`;
 
     try {
       const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "topics" });
       const parsed = parseJSON(raw);
       this.topicsData = parsed.topics ?? (Array.isArray(parsed) ? parsed : null);
-      if (!this.topicsData?.length) throw new Error("No topics extracted — try uploading more content.");
-      this._renderTopics();
+      if (!this.topicsData?.length) throw new Error("No topics found — try uploading more content.");
+      this._renderMastery();
     } catch (err) {
-      this.topicsData = null;  // allow retry on next tab visit
-      $("panel-topics").innerHTML = `
+      this.topicsData = null;
+      $("panel-mastery").innerHTML = `
         <div class="panel-inner center-content">
           <div style="font-size:2.5rem">⚠️</div>
           <h3>Could not extract topics</h3>
           <p class="muted">${err.message}</p>
-          <button id="retry-topics-btn" class="btn-secondary">Retry</button>
+          <button id="retry-mastery-btn" class="btn-secondary">Retry</button>
         </div>`;
-      $("retry-topics-btn")?.addEventListener("click", () => {
+      $("retry-mastery-btn")?.addEventListener("click", () => {
         this._topicsLoading = false;
-        this._extractTopics();
+        this._extractMastery();
       });
     }
-
     this._topicsLoading = false;
   }
 
-  _renderTopics() {
+  _renderMastery() {
     const impColor = { high: "var(--clr-error)", medium: "var(--clr-warning)", low: "var(--clr-success)" };
 
     const cards = this.topicsData.map((t, i) => {
+      const ms  = this.masteryScores[t.name];
+      const pct = ms ? Math.round(ms.pct * 100) : null;
+      const masteryBar = pct !== null
+        ? `<div class="mastery-bar-wrap">
+            <div class="mastery-bar">
+              <div class="mastery-fill" style="width:${pct}%;background:${pct >= 80 ? "var(--clr-success)" : pct >= 50 ? "var(--clr-warning)" : "var(--clr-error)"}"></div>
+            </div>
+            <span class="mastery-pct">${pct}% mastery</span>
+           </div>`
+        : "";
+
       const subtopics = (t.subtopics ?? []).map(s => {
         const sid = `st-${i}-${s.replace(/\W/g, "-")}`;
         return `
@@ -1196,8 +866,10 @@ Be exhaustive — extract every significant topic and subtopic. Return only JSON
             <label for="${sid}">${s}</label>
           </div>`;
       }).join("");
+
       const prereqs = (t.prerequisites ?? []).length
         ? `<div class="topic-prereqs">📋 Prereqs: ${t.prerequisites.join(", ")}</div>` : "";
+
       return `
         <div class="topic-card">
           <div class="topic-header">
@@ -1206,17 +878,18 @@ Be exhaustive — extract every significant topic and subtopic. Return only JSON
             <span class="badge badge-diff-${t.importance}">${t.importance} priority</span>
             <button class="topic-study-btn" data-topic="${t.name}" title="Explain this topic">💬</button>
           </div>
+          ${masteryBar}
           ${t.summary ? `<p class="topic-summary">${t.summary}</p>` : ""}
           ${prereqs}
           ${subtopics ? `<div class="subtopics">${subtopics}</div>` : ""}
         </div>`;
     }).join("");
 
-    $("panel-topics").innerHTML = `
+    $("panel-mastery").innerHTML = `
       <div class="panel-inner">
         <div class="panel-header">
-          <h2>📊 Topic Map</h2>
-          <p>${this.topicsData.length} topics found. Tick subtopics as you master them.</p>
+          <h2>📊 Mastery Tracker</h2>
+          <p>${this.topicsData.length} topics found. Tick subtopics as you master them. Test scores update the mastery bars automatically.</p>
         </div>
         <div class="topics-grid">${cards}</div>
       </div>`;
@@ -1228,214 +901,9 @@ Be exhaustive — extract every significant topic and subtopic. Return only JSON
       });
     });
     document.querySelectorAll(".subtopic-check").forEach(cb => {
-      const key = "recal-cb-" + cb.id;
+      const key = "cb-" + cb.id;
       cb.checked = localStorage.getItem(key) === "1";
       cb.addEventListener("change", () => localStorage.setItem(key, cb.checked ? "1" : "0"));
-    });
-  }
-
-  // ── Mind Map ──────────────────────────────────────────────────────────────────
-
-  _bindMindMap() {
-    $("panel-mindmap").addEventListener("click", e => {
-      if (e.target.id === "gen-mm-btn")   this._generateMindMap();
-      if (e.target.id === "regen-mm-btn") { this._mmRendered = false; this._renderMindMapSetup(); }
-    });
-  }
-
-  _renderMindMapSetup() {
-    this._mmRendered = false;
-    const hasDocs    = this.store.hasContent;
-    const hasHistory = this.history.length > 0;
-    const hint = hasDocs
-      ? "Enter a topic below. Leave blank to use your chat history, or upload materials to map everything."
-      : hasHistory
-        ? "Enter a topic or leave blank to build a map from your recent chat conversation."
-        : "Enter a topic to create a mind map. You can also upload study materials or have a chat first.";
-
-    $("panel-mindmap").innerHTML = `
-      <div class="panel-inner">
-        <div class="panel-header">
-          <h2>🗺️ Mind Map</h2>
-          <p>${hint}</p>
-        </div>
-        <div class="form-card">
-          <div class="form-group">
-            <label>Topic / Subject <span class="muted">(optional)</span></label>
-            <input id="mm-topic" type="text"
-              placeholder="e.g. Photosynthesis, Chapter 3, Machine Learning — or leave blank">
-          </div>
-          <button id="gen-mm-btn" class="btn-primary">Generate Mind Map</button>
-        </div>
-      </div>`;
-  }
-
-  async _generateMindMap() {
-    const topic      = $("mm-topic")?.value.trim() ?? "";
-    const hasDocs    = this.store.hasContent;
-    const hasHistory = this.history.length > 0;
-
-    // Determine context source
-    let contextText = "";
-    let contextLabel = topic || "";
-
-    if (topic) {
-      // User gave a specific topic — pull from docs if available, else use topic name alone
-      contextText = hasDocs ? this.store.getContext(topic, 5000) : "";
-      contextLabel = topic;
-    } else if (hasHistory) {
-      // Use recent chat history
-      contextText = this.history.slice(-8)
-        .map(m => `${m.role === "user" ? "Student" : "Recal"}: ${m.content.slice(0, 400)}`)
-        .join("\n\n");
-      contextLabel = "recent chat discussion";
-    } else if (hasDocs) {
-      // Fall back to full doc overview
-      contextText = this.store.getOverview(5000);
-      contextLabel = "uploaded study materials";
-    } else {
-      // Nothing to work with
-      this._renderMindMapSetup();
-      this._toast("Enter a topic, upload materials, or have a chat first.", "info");
-      return;
-    }
-
-    const panel = $("panel-mindmap");
-    panel.innerHTML = `
-      <div class="panel-inner center-content">
-        <div class="generating-anim">🗺️</div>
-        <h3>Building mind map…</h3>
-        <div class="spinner-bar"><div class="spinner-fill"></div></div>
-      </div>`;
-
-    const userMsg = `Create a mind map focused on: "${contextLabel}"
-
-${contextText ? `Context:\n${contextText}\n\n` : ""}Generate a clear, educational mind map with 4-7 main branches and 2-4 leaves per branch. Return only JSON.`;
-
-    try {
-      const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "mindmap" });
-      const parsed = parseJSON(raw);
-      if (!parsed.center || !parsed.branches?.length) throw new Error("Invalid mind map structure returned.");
-      this._renderMindMap(parsed, contextLabel);
-      this._mmRendered = true;
-    } catch (err) {
-      panel.innerHTML = `
-        <div class="panel-inner center-content">
-          <div style="font-size:2.5rem">⚠️</div>
-          <h3>Could not generate mind map</h3>
-          <p class="muted">${err.message}</p>
-          <button id="regen-mm-btn" class="btn-secondary">Try Again</button>
-        </div>`;
-    }
-  }
-
-  _renderMindMap(data, label) {
-    const { center, branches } = data;
-    const W = 1000, H = 660, cx = 500, cy = 330;
-    const R1 = 200;
-    const clrs = ["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f97316","#06b6d4"];
-    const n = branches.length;
-
-    // Escape text for safe SVG embedding
-    const esc = s => String(s ?? "")
-      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-
-    // Word-wrap text into rows of at most `maxLen` chars
-    const wrap = (text, maxLen) => {
-      const words = esc(text).split(" ");
-      const rows = []; let row = "";
-      for (const w of words) {
-        const t = row ? row + " " + w : w;
-        if (t.length > maxLen && row) { rows.push(row); row = w; }
-        else row = t;
-      }
-      if (row) rows.push(row);
-      return rows.slice(0, 3);
-    };
-
-    // Build SVG text node with tspan word-wrap
-    const textNode = (x, y, rows, color, fontSize, fontWeight) => {
-      const lineH = fontSize * 1.3;
-      const totalH = (rows.length - 1) * lineH;
-      const tspans = rows.map((l, i) =>
-        `<tspan x="${x.toFixed(1)}" dy="${i === 0 ? (-totalH / 2).toFixed(1) : lineH.toFixed(1)}">${l}</tspan>`
-      ).join("");
-      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle"
-        fill="${color}" font-size="${fontSize}" font-weight="${fontWeight}" font-family="Inter,system-ui,sans-serif">${tspans}</text>`;
-    };
-
-    const lines = [];
-    const nodes = [];
-
-    branches.forEach((branch, i) => {
-      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
-      const tx = cx + R1 * Math.cos(angle);
-      const ty = cy + R1 * Math.sin(angle);
-      const clr = clrs[i % clrs.length];
-
-      // Center → branch line
-      lines.push(`<line x1="${cx}" y1="${cy}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}"
-        stroke="${clr}" stroke-width="2.5" stroke-opacity="0.6" stroke-linecap="round"/>`);
-
-      // Branch node
-      const bRows = wrap(branch.name, 12);
-      nodes.push(`<g class="mm-node mm-topic" data-topic="${esc(branch.name)}">
-        <circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="44"
-          fill="${clr}" fill-opacity="0.13" stroke="${clr}" stroke-width="2" stroke-opacity="0.75"/>
-        ${textNode(tx, ty, bRows, clr, 10, 700)}
-      </g>`);
-
-      // Leaves
-      const leaves = (branch.leaves ?? []).slice(0, 4);
-      const spread = Math.min(Math.PI * 0.7, leaves.length * 0.35);
-      leaves.forEach((leaf, j) => {
-        const sa = leaves.length > 1
-          ? angle - spread / 2 + (j / (leaves.length - 1)) * spread
-          : angle;
-        const sx = tx + 130 * Math.cos(sa);
-        const sy = ty + 130 * Math.sin(sa);
-        lines.push(`<line x1="${tx.toFixed(1)}" y1="${ty.toFixed(1)}" x2="${sx.toFixed(1)}" y2="${sy.toFixed(1)}"
-          stroke="${clr}" stroke-width="1.5" stroke-opacity="0.35" stroke-linecap="round"/>`);
-        const lRows = wrap(leaf, 11);
-        nodes.push(`<g class="mm-node mm-sub">
-          <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="30"
-            fill="${clr}" fill-opacity="0.07" stroke="${clr}" stroke-width="1.2" stroke-opacity="0.4"/>
-          ${textNode(sx, sy, lRows, clr, 8.5, 400)}
-        </g>`);
-      });
-    });
-
-    // Center node
-    const cRows = wrap(center, 14);
-    nodes.push(`<g class="mm-node mm-center">
-      <circle cx="${cx}" cy="${cy}" r="58"
-        fill="#6366f1" fill-opacity="0.15" stroke="#6366f1" stroke-width="3" stroke-opacity="0.85"/>
-      ${textNode(cx, cy, cRows, "#6366f1", 12, 800)}
-    </g>`);
-
-    const svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"
-      style="width:100%;min-height:300px;display:block">
-      <g class="mm-lines">${lines.join("")}</g>
-      <g class="mm-nodes">${nodes.join("")}</g>
-    </svg>`;
-
-    $("panel-mindmap").innerHTML = `
-      <div class="panel-inner mm-panel">
-        <div class="panel-header">
-          <h2>🗺️ Mind Map</h2>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <p class="muted">${branches.length} branches — click a topic to explain it in chat</p>
-            <button id="regen-mm-btn" class="btn-secondary btn-sm-text">↺ New Map</button>
-          </div>
-        </div>
-        <div class="mm-container">${svg}</div>
-      </div>`;
-
-    $("panel-mindmap").querySelectorAll(".mm-node.mm-topic").forEach(node => {
-      node.addEventListener("click", () => {
-        this._switchMode("chat");
-        $("chat-input").value = `Explain "${node.dataset.topic}" in detail with analogies and concrete examples from my study materials.`;
-      });
     });
   }
 
@@ -1443,7 +911,7 @@ ${contextText ? `Context:\n${contextText}\n\n` : ""}Generate a clear, educationa
 
   _toast(msg, type = "info") {
     const el = document.createElement("div");
-    el.className  = `toast toast-${type}`;
+    el.className   = `toast toast-${type}`;
     el.textContent = msg;
     document.body.appendChild(el);
     requestAnimationFrame(() => el.classList.add("show"));
@@ -1451,5 +919,5 @@ ${contextText ? `Context:\n${contextText}\n\n` : ""}Generate a clear, educationa
   }
 }
 
-const app = new RecalApp();
+const app = new CampusBridgeApp();
 window.app = app;

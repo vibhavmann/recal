@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recal — Adaptive Learning Assistant</title>
-  <!-- Apply saved theme before first paint to prevent flash -->
+  <title>CampusBridge — Adaptive Learning Assistant</title>
   <script>
-    const t = localStorage.getItem("recal-theme");
+    const t = localStorage.getItem("cb-theme");
     if (t) document.documentElement.setAttribute("data-theme", t);
   </script>
   <link rel="stylesheet" href="css/styles.css">
@@ -16,41 +15,32 @@
 </head>
 <body>
 
-  <!-- Mobile sidebar overlay -->
   <div id="sidebar-overlay" class="sidebar-overlay" hidden></div>
 
   <div id="main-app">
 
-    <!-- Header -->
     <header>
-      <!-- Mobile: hamburger to open sidebar -->
       <button id="sidebar-toggle" class="sidebar-toggle" title="Open materials">☰</button>
 
-      <div class="brand-sm"><span>Re</span><span class="accent">cal</span></div>
+      <div class="brand-sm"><span>Campus</span><span class="accent">Bridge</span></div>
 
       <nav class="mode-nav" id="mode-nav">
         <button class="mode-btn active" data-mode="chat">💬 Chat</button>
-        <button class="mode-btn" data-mode="flashcards">🃏 Flashcards</button>
         <button class="mode-btn" data-mode="test">🎯 Test</button>
         <button class="mode-btn" data-mode="plan">📅 Plan</button>
-        <button class="mode-btn" data-mode="topics">📊 Topics</button>
-        <button class="mode-btn" data-mode="mindmap">🗺️ Mind Map</button>
+        <button class="mode-btn" data-mode="mastery">📊 Mastery</button>
       </nav>
 
       <div class="header-actions">
         <button id="new-chat-btn" class="btn-new-chat" title="Clear conversation">＋ New Chat</button>
-        <button id="web-search-toggle" class="web-search-toggle" title="Enable web search">🌐 Web</button>
         <span class="model-badge" title="Powered by Claude">✦ Claude</span>
         <button id="theme-btn" class="theme-btn" title="Toggle dark / light mode">🌙</button>
       </div>
     </header>
 
-    <!-- Body -->
     <div class="layout">
 
-      <!-- Sidebar -->
       <aside class="sidebar" id="sidebar">
-        <!-- Mobile close button -->
         <div class="sidebar-close-row">
           <span class="sidebar-title-mobile">📚 Materials</span>
           <button id="sidebar-close" class="sidebar-close" title="Close">✕</button>
@@ -74,15 +64,12 @@
         <div class="sidebar-bottom">
           <div class="quick-actions">
             <p class="qa-label">Quick Actions</p>
-            <button class="qa-btn" data-action="summarize">📋 Summarise Materials</button>
-            <button class="qa-btn" data-action="key-concepts">💡 List Key Concepts</button>
-            <button class="qa-btn" data-action="generate-test">🎯 Quick 5-Question Test</button>
-            <button class="qa-btn" data-action="study-plan">📅 Build Study Plan</button>
+            <button class="qa-btn" data-action="generate-test">🎯 Generate Adaptive Test</button>
+            <button class="qa-btn" data-action="study-plan">📅 Build / Update Study Plan</button>
           </div>
         </div>
       </aside>
 
-      <!-- Content panels -->
       <main class="content">
 
         <!-- Chat -->
@@ -90,13 +77,13 @@
           <div id="chat-messages" class="chat-messages">
             <div class="welcome">
               <div class="welcome-logo">🎓</div>
-              <h2>Welcome to Recal!</h2>
-              <p>Upload your study materials, then ask me anything — or use a Quick Action in the sidebar.</p>
+              <h2>Welcome to CampusBridge!</h2>
+              <p>Upload your study materials and ask me anything — I'll explain concepts clearly and help you master them.</p>
               <div class="feature-list">
-                <div class="feature">🎯 Adaptive practice tests with detailed explanations</div>
-                <div class="feature">🃏 Flashcard decks for active recall practice</div>
-                <div class="feature">📊 Topic extraction &amp; mastery tracking</div>
-                <div class="feature">📅 Personalised study plans with spaced repetition</div>
+                <div class="feature">🎯 Adaptive practice tests that adjust to your level</div>
+                <div class="feature">💡 Concept explanations with analogies &amp; examples</div>
+                <div class="feature">📊 Per-topic mastery tracking with checkboxes</div>
+                <div class="feature">📅 Personalised study plans that update in real-time</div>
               </div>
             </div>
           </div>
@@ -104,7 +91,7 @@
             <div class="input-row">
               <textarea
                 id="chat-input"
-                placeholder="Ask me anything about your study materials…"
+                placeholder="Ask me to explain a concept, give an example, or help you understand anything…"
                 rows="1"
               ></textarea>
               <button id="send-btn" class="btn-send" title="Send (Enter)">
@@ -114,20 +101,14 @@
           </div>
         </div>
 
-        <!-- Flashcards (content injected by JS) -->
-        <div id="panel-flashcards" class="panel"></div>
-
-        <!-- Practice Test (content injected by JS) -->
+        <!-- Practice Test -->
         <div id="panel-test" class="panel"></div>
 
-        <!-- Study Plan (content injected by JS) -->
+        <!-- Study Plan -->
         <div id="panel-plan" class="panel"></div>
 
-        <!-- Topics (content injected by JS) -->
-        <div id="panel-topics" class="panel"></div>
-
-        <!-- Mind Map (content injected by JS) -->
-        <div id="panel-mindmap" class="panel"></div>
+        <!-- Mastery -->
+        <div id="panel-mastery" class="panel"></div>
 
       </main>
     </div>

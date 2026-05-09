@@ -1,41 +1,34 @@
-// api/chat.js — Streaming SSE endpoint (chat + study plan)
-// Runs on Vercel Edge Runtime; ANTHROPIC_API_KEY stays server-side.
+// api/chat.js — Streaming SSE endpoint
 import Anthropic from "@anthropic-ai/sdk";
 
 export const config = { runtime: "edge" };
 
-// Initialised inside handler — avoids Edge Runtime cold-start issues
 const SYSTEM_PROMPTS = {
-  chat: `You are Recal, an adaptive learning assistant that helps college students study effectively from their uploaded course materials.
+  chat: `You are CampusBridge, an adaptive learning assistant that helps students master their course materials.
 
-Your capabilities:
-• Explain concepts clearly with relatable analogies and concrete examples
-• Break down complex ideas into simpler components with multiple angles when needed
-• Generate adaptive practice tests at multiple cognitive levels
-• Create personalised study plans using spaced repetition principles
-• Identify topics, subtopics, and prerequisite relationships
-• Connect ideas across different parts of the materials
+Your approach:
+• Explain every concept with at least one concrete analogy and one real-world example
+• Break complex ideas into digestible steps, building from simple to complex
+• Connect new concepts to things the student already knows
+• Be encouraging and precise — celebrate understanding, not just effort
+• When a concept requires memorisation, flag it explicitly with 📌
+• Use clear markdown: headers, bullets, tables, and code blocks where helpful
 
 Rules:
-- Always base your answers strictly on the provided study material excerpts
-- If a topic isn't covered in the materials, politely say so and offer related help
-- Use clear markdown formatting: headers, bullets, numbered lists, tables, code blocks where relevant
-- Be encouraging and supportive while maintaining academic rigour
-- When rote memorisation is required, explicitly flag it with a 📌 note
-- With every concept explanation, include at least one concrete example`,
+- Base answers strictly on the provided study materials
+- If a topic isn't in the materials, say so clearly and offer related help from what is available
+- Always include at least one analogy or example per concept explanation`,
 
-  plan: `You are Recal creating a detailed, personalised study plan. The student has provided their exam date, daily available hours, and any specific concerns.
+  plan: `You are CampusBridge creating a personalised, adaptive study plan.
 
-Your plan must:
-1. Identify all major topics and subtopics from the materials
-2. Prioritise by importance and difficulty
-3. Apply spaced repetition — revisit key topics multiple times at increasing intervals
-4. Suggest concrete active recall techniques (not passive re-reading) for each topic type
-5. Include buffer days for review and unexpected delays
-6. Be realistic given the time constraints
-7. Use markdown tables, headers, and checkboxes for clarity
-
-Be encouraging and specific. Name actual topics from the materials, not generic advice.`,
+The plan must:
+1. Identify all topics from the materials — prioritise by importance and the student's weak areas
+2. Apply spaced repetition — schedule revisits at Day 1, Day 3, Day 7 intervals
+3. Output a concise markdown TABLE with columns: Day | Topics | Activity | Duration
+4. Add a short Spaced Repetition table showing revisit schedule
+5. End with 3-4 bullet-point tips
+6. Be realistic given the time constraints — no lengthy prose, tables and bullets only
+7. If test performance data is provided, weight weak topics more heavily`,
 };
 
 export default async function handler(req) {
@@ -49,9 +42,7 @@ export default async function handler(req) {
     });
   }
 
-  if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
+  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return new Response(
@@ -61,36 +52,27 @@ export default async function handler(req) {
   }
 
   let body;
-  try {
-    body = await req.json();
-  } catch {
-    return new Response("Invalid JSON", { status: 400 });
-  }
+  try { body = await req.json(); }
+  catch { return new Response("Invalid JSON", { status: 400 }); }
 
   const { messages, mode = "chat", temperature = 0.7 } = body;
   if (!Array.isArray(messages) || !messages.length) {
     return new Response("messages array required", { status: 400 });
   }
 
-  const system = SYSTEM_PROMPTS[mode] ?? SYSTEM_PROMPTS.chat;
+  const system    = SYSTEM_PROMPTS[mode] ?? SYSTEM_PROMPTS.chat;
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const model = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
-
-  const enc = new TextEncoder();
-  const send = (ctrl, payload) =>
+  const model     = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
+  const enc       = new TextEncoder();
+  const send      = (ctrl, payload) =>
     ctrl.enqueue(enc.encode(`data: ${JSON.stringify(payload)}\n\n`));
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
         const claudeStream = anthropic.messages.stream({
-          model,
-          max_tokens: 8192,
-          temperature,
-          system,
-          messages,
+          model, max_tokens: 8192, temperature, system, messages,
         });
-
         for await (const event of claudeStream) {
           if (
             event.type === "content_block_delta" &&
