@@ -66,18 +66,43 @@ async function streamChat({ messages, mode = "chat", temperature = 0.7 }, onChun
 }
 
 async function generate({ messages, mode, temperature = 0.3 }) {
-  const res  = await fetch("/api/generate", {
+  const res = await fetch("/api/generate", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ messages, mode, temperature }),
   });
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); }
-  catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
-  if (data.error) throw new Error(data.error);
-  if (!data.content && data.content !== "") throw new Error("Empty response — please try again.");
-  return data.content;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? "API request failed");
+  }
+
+  const reader = res.body.getReader();
+  const dec    = new TextDecoder();
+  let   buf    = "";
+  let   full   = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (!raw) continue;
+      try {
+        const evt = JSON.parse(raw);
+        if (evt.error) throw new Error(evt.error);
+        if (evt.t) full += evt.t;
+        if (evt.done) return full;
+      } catch (e) {
+        if (e.message !== "Unexpected end of JSON input") throw e;
+      }
+    }
+  }
+  if (!full) throw new Error("Empty response — please try again.");
+  return full;
 }
 
 // ─── Welcome HTML ─────────────────────────────────────────────────────────────

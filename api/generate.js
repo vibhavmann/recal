@@ -57,43 +57,68 @@ Schema:
 Guidelines: Be exhaustive. High importance = tested frequently or foundational. Include every distinct topic and subtopic.`,
 };
 
-const CORS = {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "*",
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin":  "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
 
 export default async function handler(req) {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" },
-    });
-  }
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
+  if (req.method !== "POST")    return new Response("Method not allowed", { status: 405 });
 
   if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY is not set on the server." }), { status: 500, headers: CORS });
+    return new Response(
+      JSON.stringify({ error: "ANTHROPIC_API_KEY is not set on the server." }),
+      { status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+    );
   }
 
   let body;
   try { body = await req.json(); }
-  catch { return new Response(JSON.stringify({ error: "Invalid JSON body" }), { status: 400, headers: CORS }); }
+  catch { return new Response("Invalid JSON", { status: 400 }); }
 
   const { messages, mode = "test", temperature = 0.3 } = body;
   if (!Array.isArray(messages) || !messages.length) {
-    return new Response(JSON.stringify({ error: "messages array required" }), { status: 400, headers: CORS });
+    return new Response("messages array required", { status: 400 });
   }
 
   const system    = SYSTEM_PROMPTS[mode] ?? SYSTEM_PROMPTS.test;
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model     = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
+  const enc       = new TextEncoder();
+  const send      = (ctrl, payload) =>
+    ctrl.enqueue(enc.encode(`data: ${JSON.stringify(payload)}\n\n`));
 
-  try {
-    const response = await anthropic.messages.create({
-      model, max_tokens: 4096, temperature, system, messages,
-    });
-    const content = response.content[0]?.text ?? "";
-    return new Response(JSON.stringify({ content }), { headers: CORS });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message ?? "Unknown error" }), { status: 500, headers: CORS });
-  }
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        const claudeStream = anthropic.messages.stream({
+          model, max_tokens: 4096, temperature, system, messages,
+        });
+        for await (const event of claudeStream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta" &&
+            event.delta.text
+          ) {
+            send(controller, { t: event.delta.text });
+          }
+        }
+        send(controller, { done: true });
+      } catch (err) {
+        send(controller, { error: err.message ?? "Unknown error" });
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type":     "text/event-stream",
+      "Cache-Control":    "no-cache, no-transform",
+      "X-Accel-Buffering":"no",
+      ...CORS_HEADERS,
+    },
+  });
 }
