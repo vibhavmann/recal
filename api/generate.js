@@ -1,4 +1,4 @@
-// api/generate.js — Full JSON response endpoint (tests, topics, flashcards)
+// api/generate.js — Full JSON response endpoint (tests, topics, flashcards, mindmap)
 import Anthropic from "@anthropic-ai/sdk";
 
 export const config = { runtime: "edge" };
@@ -71,6 +71,26 @@ Guidelines:
 - Every card must be self-contained and understandable without others
 - Vary difficulty across the deck
 - Flag with 📌 only when the exact wording/formula/list must be memorised verbatim`,
+
+  mindmap: `You are Recal creating a focused mind map. Output ONLY valid JSON — no markdown, no extra text.
+
+Schema:
+{
+  "center": "Central Topic (1-4 words)",
+  "branches": [
+    {
+      "name": "Main Branch Name",
+      "leaves": ["Leaf A", "Leaf B", "Leaf C"]
+    }
+  ]
+}
+
+Guidelines:
+- center: the main subject of the mind map — short and clear (1-4 words)
+- branches: 4-7 main branches covering key aspects of the topic
+- leaves: 2-4 concise items per branch (2-5 words each, no punctuation)
+- Focus specifically on the topic requested
+- Be educational and specific, not generic`,
 };
 
 const CORS = {
@@ -92,7 +112,7 @@ export default async function handler(req) {
 
   let body;
   try { body = await req.json(); }
-  catch { return new Response("Invalid JSON body", { status: 400 }); }
+  catch { return new Response(JSON.stringify({ error: "Invalid JSON body" }), { status: 400, headers: CORS }); }
 
   const { messages, mode = "test", temperature = 0.3 } = body;
   if (!Array.isArray(messages) || !messages.length) {
@@ -101,27 +121,20 @@ export default async function handler(req) {
 
   const system = SYSTEM_PROMPTS[mode] ?? SYSTEM_PROMPTS.test;
 
-  // Init inside handler — safer for Edge Runtime cold starts
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model     = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
 
   try {
-    // Use streaming internally so Edge Runtime connection stays alive during long generations
-    const stream = anthropic.messages.stream({
+    // messages.create() is a simple fetch — reliable in Edge Runtime
+    const response = await anthropic.messages.create({
       model,
-      max_tokens: 8192,
+      max_tokens: 4096,
       temperature,
       system,
       messages,
     });
 
-    let content = "";
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-        content += event.delta.text;
-      }
-    }
-
+    const content = response.content[0]?.text ?? "";
     return new Response(JSON.stringify({ content }), { headers: CORS });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message ?? "Unknown error" }), { status: 500, headers: CORS });

@@ -95,8 +95,13 @@ async function generate({ messages, mode, temperature = 0.3 }) {
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ messages, mode, temperature }),
   });
-  const data = await res.json();
+  // Read as text first — Vercel can return plain-text errors on crashes
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); }
+  catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
   if (data.error) throw new Error(data.error);
+  if (!data.content && data.content !== "") throw new Error("Empty response from server — please try again.");
   return data.content;
 }
 
@@ -313,7 +318,15 @@ class RecalApp {
   _quickAction(action) {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
     if (action === "key-concepts") {
-      this._showKeyConceptsModal().then(level => {
+      this._showDetailModal(
+        "Key Concepts Detail Level",
+        "How detailed should the key concepts list be?",
+        {
+          small:  ["Small", "Concise list — main concepts with one-line definitions"],
+          medium: ["Medium", "Concepts with 2-3 sentence explanations"],
+          large:  ["Large", "Full detail — definitions, explanations & examples for every concept"],
+        }
+      ).then(level => {
         if (!level) return;
         const prompts = {
           small:  "List all key concepts from my study materials as a concise bulleted list. For each concept, write a single clear definition sentence only. Be comprehensive — include every significant concept.",
@@ -326,8 +339,29 @@ class RecalApp {
       });
       return;
     }
+    if (action === "summarize") {
+      this._showDetailModal(
+        "Summary Detail Level",
+        "How detailed should the summary be?",
+        {
+          small:  ["Small", "Key points only — one paragraph per major section"],
+          medium: ["Medium", "Balanced overview — 2-3 sentences per topic"],
+          large:  ["Large", "Comprehensive — covers all sections without skipping any content"],
+        }
+      ).then(level => {
+        if (!level) return;
+        const prompts = {
+          small:  "Summarise my study materials briefly. For each major section, write one short paragraph covering only the most important points. Be concise.",
+          medium: "Summarise my study materials. For each major section or topic, write 2-3 sentences covering the key ideas. Cover all sections — do not skip any.",
+          large:  "Summarise ALL of my study materials in detail. Go through every section and topic in order — do not skip or omit any part. For each section, write a thorough summary. Use clear headings for each major topic.",
+        };
+        this._switchMode("chat");
+        $("chat-input").value = prompts[level];
+        this._sendMessage();
+      });
+      return;
+    }
     const prompts = {
-      summarize:      "Summarise ALL of the uploaded study materials. Go through every section and topic in order — do not skip or omit any part. If materials are extensive, write a condensed but complete summary for each section. Structure your response with clear headings for each major topic.",
       "generate-test":"Generate a quick 5-question mixed practice test covering the main topics in my study materials.",
       "study-plan":   "Create a study plan for these materials using spaced repetition principles.",
     };
@@ -338,28 +372,21 @@ class RecalApp {
     this._sendMessage();
   }
 
-  _showKeyConceptsModal() {
+  // Generic detail-level modal. options = { key: ["Label", "Description"], ... }
+  _showDetailModal(title, subtitle, options) {
     return new Promise(resolve => {
       const overlay = document.createElement("div");
       overlay.className = "modal-overlay";
+      const opts = Object.entries(options).map(([key, [label, desc]]) => `
+        <button class="modal-opt" data-level="${key}">
+          <strong>${label}</strong>
+          <span>${desc}</span>
+        </button>`).join("");
       overlay.innerHTML = `
         <div class="modal-box" role="dialog" aria-modal="true">
-          <h3>Key Concepts Detail Level</h3>
-          <p>How detailed should the key concepts list be?</p>
-          <div class="modal-opts">
-            <button class="modal-opt" data-level="small">
-              <strong>Small</strong>
-              <span>Concise list — main concepts with one-line definitions</span>
-            </button>
-            <button class="modal-opt" data-level="medium">
-              <strong>Medium</strong>
-              <span>Concepts with 2-3 sentence explanations</span>
-            </button>
-            <button class="modal-opt" data-level="large">
-              <strong>Large</strong>
-              <span>Full detail — definitions, explanations &amp; examples for every concept</span>
-            </button>
-          </div>
+          <h3>${title}</h3>
+          <p>${subtitle}</p>
+          <div class="modal-opts">${opts}</div>
           <button class="modal-cancel">Cancel</button>
         </div>`;
       document.body.appendChild(overlay);
@@ -402,9 +429,7 @@ class RecalApp {
     if (mode === "topics" && !this.topicsData && this.store.hasContent) {
       this._extractTopics();
     }
-    if (mode === "mindmap" && !this._mmRendered) {
-      this._renderMindMapSetup();
-    }
+    if (mode === "mindmap" && !this._mmRendered) this._renderMindMapSetup();
   }
 
   // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -553,10 +578,9 @@ class RecalApp {
             <div class="form-group">
               <label>Number of Cards</label>
               <select id="fc-count">
-                <option value="8">8 cards</option>
-                <option value="12">12 cards</option>
-                <option value="16" selected>16 cards</option>
-                <option value="20">20 cards</option>
+                <option value="4">4 cards</option>
+                <option value="6">6 cards</option>
+                <option value="8" selected>8 cards</option>
               </select>
             </div>
             <div class="form-group">
@@ -765,8 +789,6 @@ Return only the JSON.`;
                 <option value="5">5 questions</option>
                 <option value="8">8 questions</option>
                 <option value="10" selected>10 questions</option>
-                <option value="15">15 questions</option>
-                <option value="20">20 questions</option>
               </select>
             </div>
             <div class="form-group">
@@ -1217,26 +1239,67 @@ Be exhaustive — extract every significant topic and subtopic. Return only JSON
   _bindMindMap() {
     $("panel-mindmap").addEventListener("click", e => {
       if (e.target.id === "gen-mm-btn")   this._generateMindMap();
-      if (e.target.id === "regen-mm-btn") { this.topicsData = null; this._mmRendered = false; this._generateMindMap(); }
+      if (e.target.id === "regen-mm-btn") { this._mmRendered = false; this._renderMindMapSetup(); }
     });
   }
 
   _renderMindMapSetup() {
     this._mmRendered = false;
-    const hasContent = this.store.hasContent;
+    const hasDocs    = this.store.hasContent;
+    const hasHistory = this.history.length > 0;
+    const hint = hasDocs
+      ? "Enter a topic below. Leave blank to use your chat history, or upload materials to map everything."
+      : hasHistory
+        ? "Enter a topic or leave blank to build a map from your recent chat conversation."
+        : "Enter a topic to create a mind map. You can also upload study materials or have a chat first.";
+
     $("panel-mindmap").innerHTML = `
-      <div class="panel-inner center-content">
-        <div style="font-size:3rem;line-height:1">🗺️</div>
-        <h2>Mind Map</h2>
-        <p class="muted">Visualise your study materials as an interactive topic map.</p>
-        ${hasContent
-          ? `<button id="gen-mm-btn" class="btn-primary">Generate Mind Map</button>`
-          : `<p class="muted">Upload study materials first.</p>`}
+      <div class="panel-inner">
+        <div class="panel-header">
+          <h2>🗺️ Mind Map</h2>
+          <p>${hint}</p>
+        </div>
+        <div class="form-card">
+          <div class="form-group">
+            <label>Topic / Subject <span class="muted">(optional)</span></label>
+            <input id="mm-topic" type="text"
+              placeholder="e.g. Photosynthesis, Chapter 3, Machine Learning — or leave blank">
+          </div>
+          <button id="gen-mm-btn" class="btn-primary">Generate Mind Map</button>
+        </div>
       </div>`;
   }
 
   async _generateMindMap() {
-    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    const topic      = $("mm-topic")?.value.trim() ?? "";
+    const hasDocs    = this.store.hasContent;
+    const hasHistory = this.history.length > 0;
+
+    // Determine context source
+    let contextText = "";
+    let contextLabel = topic || "";
+
+    if (topic) {
+      // User gave a specific topic — pull from docs if available, else use topic name alone
+      contextText = hasDocs ? this.store.getContext(topic, 5000) : "";
+      contextLabel = topic;
+    } else if (hasHistory) {
+      // Use recent chat history
+      contextText = this.history.slice(-8)
+        .map(m => `${m.role === "user" ? "Student" : "Recal"}: ${m.content.slice(0, 400)}`)
+        .join("\n\n");
+      contextLabel = "recent chat discussion";
+    } else if (hasDocs) {
+      // Fall back to full doc overview
+      contextText = this.store.getOverview(5000);
+      contextLabel = "uploaded study materials";
+    } else {
+      // Nothing to work with
+      this._renderMindMapSetup();
+      this._toast("Enter a topic, upload materials, or have a chat first.", "info");
+      return;
+    }
+
     const panel = $("panel-mindmap");
     panel.innerHTML = `
       <div class="panel-inner center-content">
@@ -1245,99 +1308,115 @@ Be exhaustive — extract every significant topic and subtopic. Return only JSON
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
 
-    if (!this.topicsData) {
-      const docCtx = this.store.getOverview(8000);
-      const userMsg = `Analyse these study materials and extract a topic map.\n\nMaterials:\n${docCtx}\n\nReturn only JSON.`;
-      try {
-        const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "topics" });
-        const parsed = parseJSON(raw);
-        this.topicsData = parsed.topics ?? (Array.isArray(parsed) ? parsed : null);
-      } catch (err) {
-        panel.innerHTML = `<div class="panel-inner center-content"><div>⚠️</div><h3>Could not generate mind map</h3><p class="muted">${err.message}</p><button id="gen-mm-btn" class="btn-secondary">Try Again</button></div>`;
-        return;
-      }
-    }
+    const userMsg = `Create a mind map focused on: "${contextLabel}"
 
-    if (!this.topicsData?.length) {
-      panel.innerHTML = `<div class="panel-inner center-content"><div>⚠️</div><h3>No topics found</h3><p class="muted">Try uploading more content.</p></div>`;
-      return;
-    }
+${contextText ? `Context:\n${contextText}\n\n` : ""}Generate a clear, educational mind map with 4-7 main branches and 2-4 leaves per branch. Return only JSON.`;
 
-    this._renderMindMap(this.topicsData);
-    this._mmRendered = true;
+    try {
+      const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "mindmap" });
+      const parsed = parseJSON(raw);
+      if (!parsed.center || !parsed.branches?.length) throw new Error("Invalid mind map structure returned.");
+      this._renderMindMap(parsed, contextLabel);
+      this._mmRendered = true;
+    } catch (err) {
+      panel.innerHTML = `
+        <div class="panel-inner center-content">
+          <div style="font-size:2.5rem">⚠️</div>
+          <h3>Could not generate mind map</h3>
+          <p class="muted">${err.message}</p>
+          <button id="regen-mm-btn" class="btn-secondary">Try Again</button>
+        </div>`;
+    }
   }
 
-  _renderMindMap(topics) {
-    const W = 960, H = 640, cx = 480, cy = 320;
-    const R1 = 190;
+  _renderMindMap(data, label) {
+    const { center, branches } = data;
+    const W = 1000, H = 660, cx = 500, cy = 330;
+    const R1 = 200;
     const clrs = ["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#8b5cf6","#ec4899","#14b8a6","#f97316","#06b6d4"];
-    const n = topics.length;
+    const n = branches.length;
 
-    const lines = [];
-    const nodesSVG = [];
+    // Escape text for safe SVG embedding
+    const esc = s => String(s ?? "")
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
-    const wrap = (text, max) => {
-      const words = text.split(" ");
+    // Word-wrap text into rows of at most `maxLen` chars
+    const wrap = (text, maxLen) => {
+      const words = esc(text).split(" ");
       const rows = []; let row = "";
-      words.forEach(w => {
+      for (const w of words) {
         const t = row ? row + " " + w : w;
-        if (t.length > max && row) { rows.push(row); row = w; }
+        if (t.length > maxLen && row) { rows.push(row); row = w; }
         else row = t;
-      });
+      }
       if (row) rows.push(row);
       return rows.slice(0, 3);
     };
 
-    const nodeEl = (x, y, rows, color, r, type, dataTopic) => {
-      const dy0 = -((rows.length - 1) * 7);
+    // Build SVG text node with tspan word-wrap
+    const textNode = (x, y, rows, color, fontSize, fontWeight) => {
+      const lineH = fontSize * 1.3;
+      const totalH = (rows.length - 1) * lineH;
       const tspans = rows.map((l, i) =>
-        `<tspan x="${x}" dy="${i === 0 ? dy0 : 14}">${l}</tspan>`
+        `<tspan x="${x.toFixed(1)}" dy="${i === 0 ? (-totalH / 2).toFixed(1) : lineH.toFixed(1)}">${l}</tspan>`
       ).join("");
-      const fs   = type === "center" ? 12 : type === "topic" ? 10 : 8.5;
-      const fw   = type === "sub" ? 400 : 700;
-      const fop  = type === "sub" ? 0.08 : 0.15;
-      const sop  = type === "sub" ? 0.45 : 0.8;
-      const sw   = type === "sub" ? 1.5 : 2;
-      const dt   = dataTopic ? ` data-topic="${dataTopic}"` : "";
-      return `
-        <g class="mm-node mm-${type}"${dt}>
-          <circle cx="${x}" cy="${y}" r="${r}" fill="${color}" fill-opacity="${fop}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${sop}"/>
-          <text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle"
-            fill="${color}" font-size="${fs}" font-weight="${fw}" font-family="Inter,sans-serif">
-            ${tspans}
-          </text>
-        </g>`;
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle"
+        fill="${color}" font-size="${fontSize}" font-weight="${fontWeight}" font-family="Inter,system-ui,sans-serif">${tspans}</text>`;
     };
 
-    topics.forEach((topic, i) => {
+    const lines = [];
+    const nodes = [];
+
+    branches.forEach((branch, i) => {
       const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
       const tx = cx + R1 * Math.cos(angle);
       const ty = cy + R1 * Math.sin(angle);
       const clr = clrs[i % clrs.length];
 
-      lines.push(`<line x1="${cx}" y1="${cy}" x2="${tx}" y2="${ty}" stroke="${clr}" stroke-width="2.5" stroke-opacity="0.55" stroke-linecap="round"/>`);
+      // Center → branch line
+      lines.push(`<line x1="${cx}" y1="${cy}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}"
+        stroke="${clr}" stroke-width="2.5" stroke-opacity="0.6" stroke-linecap="round"/>`);
 
-      const subs = (topic.subtopics ?? []).slice(0, 5);
-      const spread = Math.PI * 0.55;
-      subs.forEach((sub, j) => {
-        const sa = subs.length > 1
-          ? angle - spread/2 + (j / (subs.length - 1)) * spread
+      // Branch node
+      const bRows = wrap(branch.name, 12);
+      nodes.push(`<g class="mm-node mm-topic" data-topic="${esc(branch.name)}">
+        <circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="44"
+          fill="${clr}" fill-opacity="0.13" stroke="${clr}" stroke-width="2" stroke-opacity="0.75"/>
+        ${textNode(tx, ty, bRows, clr, 10, 700)}
+      </g>`);
+
+      // Leaves
+      const leaves = (branch.leaves ?? []).slice(0, 4);
+      const spread = Math.min(Math.PI * 0.7, leaves.length * 0.35);
+      leaves.forEach((leaf, j) => {
+        const sa = leaves.length > 1
+          ? angle - spread / 2 + (j / (leaves.length - 1)) * spread
           : angle;
-        const sx = tx + 115 * Math.cos(sa);
-        const sy = ty + 115 * Math.sin(sa);
-        lines.push(`<line x1="${tx}" y1="${ty}" x2="${sx}" y2="${sy}" stroke="${clr}" stroke-width="1.5" stroke-opacity="0.35" stroke-linecap="round"/>`);
-        nodesSVG.push(nodeEl(sx, sy, wrap(sub, 11), clr, 28, "sub", null));
+        const sx = tx + 130 * Math.cos(sa);
+        const sy = ty + 130 * Math.sin(sa);
+        lines.push(`<line x1="${tx.toFixed(1)}" y1="${ty.toFixed(1)}" x2="${sx.toFixed(1)}" y2="${sy.toFixed(1)}"
+          stroke="${clr}" stroke-width="1.5" stroke-opacity="0.35" stroke-linecap="round"/>`);
+        const lRows = wrap(leaf, 11);
+        nodes.push(`<g class="mm-node mm-sub">
+          <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="30"
+            fill="${clr}" fill-opacity="0.07" stroke="${clr}" stroke-width="1.2" stroke-opacity="0.4"/>
+          ${textNode(sx, sy, lRows, clr, 8.5, 400)}
+        </g>`);
       });
-
-      nodesSVG.push(nodeEl(tx, ty, wrap(topic.name, 12), clr, 42, "topic", topic.name));
     });
 
     // Center node
-    nodesSVG.push(nodeEl(cx, cy, ["📚", "Topics"], "#6366f1", 52, "center", null));
+    const cRows = wrap(center, 14);
+    nodes.push(`<g class="mm-node mm-center">
+      <circle cx="${cx}" cy="${cy}" r="58"
+        fill="#6366f1" fill-opacity="0.15" stroke="#6366f1" stroke-width="3" stroke-opacity="0.85"/>
+      ${textNode(cx, cy, cRows, "#6366f1", 12, 800)}
+    </g>`);
 
-    const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block" xmlns="http://www.w3.org/2000/svg">
-      <g>${lines.join("")}</g>
-      ${nodesSVG.join("")}
+    const svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"
+      style="width:100%;min-height:300px;display:block">
+      <g class="mm-lines">${lines.join("")}</g>
+      <g class="mm-nodes">${nodes.join("")}</g>
     </svg>`;
 
     $("panel-mindmap").innerHTML = `
@@ -1345,14 +1424,14 @@ Be exhaustive — extract every significant topic and subtopic. Return only JSON
         <div class="panel-header">
           <h2>🗺️ Mind Map</h2>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <p class="muted">${topics.length} topics — click a topic to explain it</p>
-            <button id="regen-mm-btn" class="btn-secondary btn-sm-text">↺ Regenerate</button>
+            <p class="muted">${branches.length} branches — click a topic to explain it in chat</p>
+            <button id="regen-mm-btn" class="btn-secondary btn-sm-text">↺ New Map</button>
           </div>
         </div>
         <div class="mm-container">${svg}</div>
       </div>`;
 
-    $("panel-mindmap").querySelectorAll(".mm-node[data-topic]").forEach(node => {
+    $("panel-mindmap").querySelectorAll(".mm-node.mm-topic").forEach(node => {
       node.addEventListener("click", () => {
         this._switchMode("chat");
         $("chat-input").value = `Explain "${node.dataset.topic}" in detail with analogies and concrete examples from my study materials.`;
