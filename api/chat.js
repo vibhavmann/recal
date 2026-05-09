@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 export const config = { runtime: "edge" };
 
 const SYSTEM_PROMPTS = {
-  chat: `You are CampusBridge, an adaptive learning assistant that helps students master their course materials.
+  chat: `You are Recal, an adaptive learning assistant that helps students master their course materials.
 
 Your approach:
 • Explain every concept with at least one concrete analogy and one real-world example
@@ -19,7 +19,7 @@ Rules:
 - If a topic isn't in the materials, say so clearly and offer related help from what is available
 - Always include at least one analogy or example per concept explanation`,
 
-  plan: `You are CampusBridge creating a personalised, adaptive study plan.
+  plan: `You are Recal creating a personalised, adaptive study plan.
 
 The plan must:
 1. Identify all topics from the materials — prioritise by importance and the student's weak areas

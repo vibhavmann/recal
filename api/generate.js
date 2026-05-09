@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 export const config = { runtime: "edge" };
 
 const SYSTEM_PROMPTS = {
-  test: `You are CampusBridge generating an adaptive practice test. Output ONLY valid JSON — no markdown fences, no prose, no extra text.
+  test: `You are Recal generating an adaptive practice test. Output ONLY valid JSON — no markdown fences, no prose, no extra text.
 
 Schema:
 {
@@ -39,7 +39,7 @@ Guidelines:
 - Base every question strictly on the study material provided
 - If weak topics are listed, generate more questions on those topics`,
 
-  topics: `You are CampusBridge extracting a mastery map. Output ONLY valid JSON — no markdown, no extra text.
+  topics: `You are Recal extracting a mastery map. Output ONLY valid JSON — no markdown, no extra text.
 
 Schema:
 {

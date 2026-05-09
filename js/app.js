@@ -1,4 +1,4 @@
-// app.js — CampusBridge main controller
+// app.js — Recal main controller
 import { DocumentStore } from "./documents.js";
 import { marked }        from "https://esm.run/marked";
 import DOMPurify         from "https://esm.run/dompurify";
@@ -110,7 +110,7 @@ async function generate({ messages, mode, temperature = 0.3 }) {
 const WELCOME_HTML = `
   <div class="welcome">
     <div class="welcome-logo">🎓</div>
-    <h2>Welcome to CampusBridge!</h2>
+    <h2>Welcome to Recal!</h2>
     <p>Upload your study materials and ask me anything — I'll explain concepts clearly and help you master them.</p>
     <div class="feature-list">
       <div class="feature">🎯 Adaptive practice tests that adjust to your level</div>
@@ -122,7 +122,7 @@ const WELCOME_HTML = `
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-class CampusBridgeApp {
+class RecalApp {
   constructor() {
     this.store          = new DocumentStore();
     this.history        = [];
@@ -705,7 +705,7 @@ Return only the JSON.`;
         <div class="results-breakdown"><h3>Question Breakdown</h3>${breakdown}</div>
         <div class="results-actions">
           <button id="restart-test-btn" class="btn-primary">Take Another Test</button>
-          <button id="review-chat-btn" class="btn-secondary">Ask CampusBridge to Explain</button>
+          <button id="review-chat-btn" class="btn-secondary">Ask Recal to Explain</button>
         </div>
       </div>`;
 
@@ -736,7 +736,7 @@ Return only the JSON.`;
       <div class="panel-inner">
         <div class="panel-header">
           <h2>📅 Study Plan</h2>
-          <p>Get a personalised, adaptive schedule. CampusBridge factors in your test performance to focus on weak areas.</p>
+          <p>Get a personalised, adaptive schedule. Recal factors in your test performance to focus on weak areas.</p>
         </div>
         <div class="form-card">
           <div class="form-row">
@@ -990,5 +990,5 @@ No prose paragraphs — tables and bullets only.`;
   }
 }
 
-const app = new CampusBridgeApp();
+const app = new RecalApp();
 window.app = app;
