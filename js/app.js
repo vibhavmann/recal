@@ -26,7 +26,31 @@ function parseJSON(raw) {
   throw new Error("Could not parse structured response — please try again.");
 }
 
-// ─── API ──────────────────────────────────────────────────────────────────────
+// ─── API ─────────────────────────────────────────────────────────────────────
+
+// Fetch top-5 DuckDuckGo results for a query
+async function webSearch(query) {
+  try {
+    const res  = await fetch("/api/search", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ query }),
+    });
+    const data = await res.json();
+    return data.results ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function formatWebResults(results) {
+  if (!results.length) return "";
+  const lines = results.map((r, i) =>
+    `${i + 1}. **${r.title}**${r.url ? " — " + r.url : ""}\n   ${r.snippet}`
+  );
+  return `=== Web Search Results ===\n${lines.join("\n\n")}`;
+}
+
 
 async function streamChat({ messages, mode = "chat", temperature = 0.7 }, onChunk) {
   const res = await fetch("/api/chat", {
@@ -106,6 +130,7 @@ class RecalApp {
     this._fcKeyHandler  = null;
 
     this._bindTheme();
+    this._bindSidebarMobile();
     this._bindSidebar();
     this._bindChat();
     this._bindNewChat();
@@ -149,6 +174,31 @@ class RecalApp {
     $("chat-input").value = "";
     $("chat-input").style.height = "auto";
     this._switchMode("chat");
+  }
+
+  // ── Mobile sidebar drawer ─────────────────────────────────────────────────────
+
+  _bindSidebarMobile() {
+    const sidebar  = document.getElementById("sidebar");
+    const overlay  = document.getElementById("sidebar-overlay");
+    const openBtn  = $("sidebar-toggle");
+    const closeBtn = $("sidebar-close");
+
+    const open  = () => { sidebar.classList.add("open");  overlay.hidden = false; };
+    const close = () => { sidebar.classList.remove("open"); overlay.hidden = true; };
+
+    openBtn?.addEventListener("click", open);
+    closeBtn?.addEventListener("click", close);
+    overlay?.addEventListener("click", close);
+
+    // Close sidebar when a mode tab is clicked on mobile
+    document.querySelectorAll(".mode-btn").forEach(btn =>
+      btn.addEventListener("click", () => { if (window.innerWidth <= 700) close(); })
+    );
+    // Close sidebar when a quick action is clicked
+    document.querySelectorAll(".qa-btn").forEach(btn =>
+      btn.addEventListener("click", close)
+    );
   }
 
   // ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -304,10 +354,29 @@ class RecalApp {
     const aiEl = this._appendMsg("ai", "", true);
     const box  = aiEl.querySelector(".msg-content");
 
-    const docCtx     = this.store.getContext(text, 12000);
-    const userContent = docCtx
-      ? `Here are relevant excerpts from my study materials:\n\n${docCtx}\n\n---\n\nMy question: ${text}`
-      : text;
+    // Show transient status while we fetch context
+    const searchMode0 = document.querySelector('input[name="search-mode"]:checked')?.value ?? "docs";
+    if (searchMode0 === "web") box.innerHTML = `<span class="status-msg">🌐 Searching the web…</span>`;
+
+    // Read search mode from radio buttons
+    const searchMode = document.querySelector('input[name="search-mode"]:checked')?.value ?? "docs";
+    const useWeb     = searchMode === "web";
+
+    // Build context: documents + optional web results (in parallel when web is on)
+    const [docCtx, webResults] = await Promise.all([
+      Promise.resolve(this.store.getContext(text, useWeb ? 8000 : 12000)),
+      useWeb ? webSearch(text) : Promise.resolve([]),
+    ]);
+
+    const webCtx = formatWebResults(webResults);
+
+    let userContent = text;
+    if (docCtx || webCtx) {
+      const parts = [];
+      if (docCtx)  parts.push(`=== Study Materials ===\n${docCtx}`);
+      if (webCtx)  parts.push(webCtx);
+      userContent = `${parts.join("\n\n")}\n\n---\n\nMy question: ${text}`;
+    }
 
     const messages = [
       ...this.history.slice(-8),

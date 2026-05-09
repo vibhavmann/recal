@@ -16,22 +16,28 @@
 </head>
 <body>
 
+  <!-- Mobile sidebar overlay -->
+  <div id="sidebar-overlay" class="sidebar-overlay" hidden></div>
+
   <div id="main-app">
 
     <!-- Header -->
     <header>
+      <!-- Mobile: hamburger to open sidebar -->
+      <button id="sidebar-toggle" class="sidebar-toggle" title="Open materials">☰</button>
+
       <div class="brand-sm"><span>Re</span><span class="accent">cal</span></div>
 
-      <nav class="mode-nav">
+      <nav class="mode-nav" id="mode-nav">
         <button class="mode-btn active" data-mode="chat">💬 Chat</button>
         <button class="mode-btn" data-mode="flashcards">🃏 Flashcards</button>
-        <button class="mode-btn" data-mode="test">🎯 Practice Test</button>
-        <button class="mode-btn" data-mode="plan">📅 Study Plan</button>
+        <button class="mode-btn" data-mode="test">🎯 Test</button>
+        <button class="mode-btn" data-mode="plan">📅 Plan</button>
         <button class="mode-btn" data-mode="topics">📊 Topics</button>
       </nav>
 
       <div class="header-actions">
-        <button id="new-chat-btn" class="btn-new-chat" title="Clear conversation and start fresh">＋ New Chat</button>
+        <button id="new-chat-btn" class="btn-new-chat" title="Clear conversation">＋ New Chat</button>
         <span class="model-badge" title="Powered by Claude">✦ Claude</span>
         <button id="theme-btn" class="theme-btn" title="Toggle dark / light mode">🌙</button>
       </div>
@@ -41,7 +47,13 @@
     <div class="layout">
 
       <!-- Sidebar -->
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebar">
+        <!-- Mobile close button -->
+        <div class="sidebar-close-row">
+          <span class="sidebar-title-mobile">📚 Materials</span>
+          <button id="sidebar-close" class="sidebar-close" title="Close">✕</button>
+        </div>
+
         <div class="sidebar-top">
           <div class="sidebar-header">
             <h2>Materials</h2>
@@ -87,6 +99,17 @@
             </div>
           </div>
           <div class="chat-input-area">
+            <!-- Web search toggle -->
+            <div class="search-opts">
+              <label class="search-opt">
+                <input type="radio" name="search-mode" value="docs" checked>
+                <span>📚 Materials only</span>
+              </label>
+              <label class="search-opt">
+                <input type="radio" name="search-mode" value="web">
+                <span>🌐 + Web search</span>
+              </label>
+            </div>
             <div class="input-row">
               <textarea
                 id="chat-input"
