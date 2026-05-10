@@ -205,6 +205,62 @@ class RecalApp {
     this._switchMode("home");
   }
 
+  async _newDocumentChat(docId) {
+    const doc = this.store.docs.find(d => d.id === docId);
+    if (!doc) return;
+
+    this.history = [];
+    this._chatScrollLocked = false;
+    this._setGenerating(false);
+    $("chat-messages").innerHTML = "";
+    $("chat-input").value = "";
+    $("chat-input").style.height = "auto";
+
+    this.currentDocId = docId;
+    this._setNotesDoc(doc);
+
+    const aiEl = this._appendMsg("ai", "", true);
+    const box  = aiEl.querySelector(".msg-content");
+    this._setGenerating(true);
+
+    const excerpt = doc.text.split(/\s+/).slice(0, 1500).join(" ");
+    const prompt  = `You are Recal, an adaptive learning assistant. A student just uploaded a document. Write a concise welcome message in markdown.
+
+Document filename: ${doc.name}
+Content excerpt:
+${excerpt}
+
+Your message must:
+1. In 2-3 sentences, summarise what this document is about based on its actual content.
+2. Give one specific, concrete suggestion for each tool (reference actual topics/content):
+   - 💬 Chat
+   - 🎯 Test
+   - 📅 Study Plan
+   - 📊 Mastery
+3. End with a short invitation to get started.
+
+Be specific to this content — no generic filler. Keep the whole message under 180 words.`;
+
+    let full = "";
+    try {
+      await streamChat(
+        { messages: [{ role: "user", content: prompt }], mode: "chat", temperature: 0.6 },
+        delta => {
+          full += delta;
+          box.innerHTML = md(full);
+          if (!this._chatScrollLocked) scrollEnd($("chat-messages"));
+        }
+      );
+      this.history.push({ role: "assistant", content: full });
+    } catch {
+      box.innerHTML = md(`**${doc.name} is ready.**\n\nAsk me anything about this document, or use the tabs above to generate a test, build a study plan, or track your mastery.`);
+    }
+
+    aiEl.querySelector(".msg-spinner")?.remove();
+    this._setGenerating(false);
+    $("chat-input").focus();
+  }
+
   // ── Notes pane ────────────────────────────────────────────────────────────────
 
   _bindNotes() {
@@ -367,7 +423,8 @@ class RecalApp {
       this._planHasContent    = false;
       this._masteryHasContent = false;
       this._renderHome();
-      this._openViewer(id);
+      this._switchMode("chat");
+      this._newDocumentChat(id);
     } catch (err) {
       item.dataset.state = "error";
       item.querySelector(".doc-status").textContent = "❌ Failed";
@@ -400,7 +457,12 @@ class RecalApp {
     btn.classList.remove("hidden");
     btn.addEventListener("click", e => { e.stopPropagation(); this._removeDoc(id, item); });
     item.classList.add("doc-item-clickable");
-    item.addEventListener("click", () => this._openViewer(id));
+    item.addEventListener("click", () => {
+      this.currentDocId = id;
+      const doc = this.store.docs.find(d => d.id === id);
+      if (doc) this._setNotesDoc(doc);
+      this._switchMode("chat");
+    });
   }
 
   _removeDoc(id, sidebarItem) {
@@ -418,7 +480,7 @@ class RecalApp {
     this._planHasContent    = false;
     this._masteryHasContent = false;
     if (this.currentDocId === id) { this.currentDocId = null; this._setNotesDoc(null); }
-    if (this.mode === "viewer" && this.currentDocId === null) this._switchMode("home");
+    if (!this.store.hasContent && this.mode !== "home") this._switchMode("home");
     else if (this.mode === "mastery") this._renderMasteryEmpty();
     this._renderHome();
   }
@@ -430,10 +492,7 @@ class RecalApp {
     const cacheKey = `recal-enrich-${doc.name}:${doc.size}`;
     const cached   = localStorage.getItem(cacheKey);
     if (cached) {
-      try {
-        doc.enrich = JSON.parse(cached);
-        if (this.currentDocId === id) this._renderViewer(doc);
-      } catch {}
+      try { doc.enrich = JSON.parse(cached); } catch {}
       return;
     }
 
@@ -453,10 +512,6 @@ class RecalApp {
 
     const statusEl = sidebarItem?.querySelector(".doc-status");
     if (statusEl && statusEl.textContent === "Preparing…") statusEl.textContent = fmtSize(doc.size);
-    if (this.currentDocId === id) {
-      const d = this.store.docs.find(d => d.id === id);
-      if (d) this._renderViewer(d);
-    }
   }
 
   _renderHome() {
@@ -466,40 +521,57 @@ class RecalApp {
     const hasDocs    = this.store.hasContent;
     const docs       = this.store.docs;
     const fmtW       = n => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
-    const ext        = name => name.split(".").pop().toUpperCase();
     const totalWords = docs.reduce((s, d) => s + (d.words ?? 0), 0);
 
-    let matsContent;
     if (!hasDocs) {
-      matsContent = `
-        <div class="home-upload-zone" id="home-drop-zone">
-          <div class="home-upload-icon">📂</div>
-          <p class="home-upload-label">Drop files here or <button class="upload-link" id="home-browse">browse</button></p>
-          <p class="home-upload-hint">PDF files only</p>
+      panel.innerHTML = `
+        <div class="home-wrap">
+          <div class="home-inner">
+            <div class="home-hero">
+              <div class="home-hero-logo">✦</div>
+              <h1 class="home-hero-title">Your AI study<br>companion</h1>
+              <p class="home-hero-sub">Upload study materials and let AI help you learn, test, and master them.</p>
+            </div>
+            <div class="home-upload-zone" id="home-drop-zone">
+              <div class="home-upload-icon">📂</div>
+              <p class="home-upload-label">Drop files here or <button class="upload-link" id="home-browse">browse</button></p>
+              <p class="home-upload-hint">PDF files only</p>
+            </div>
+          </div>
         </div>`;
-    } else {
-      const docRows = docs.map(d => `
-        <div class="home-doc-row home-doc-row-open" data-id="${d.id}">
-          <span class="home-doc-badge">${ext(d.name)}</span>
-          <span class="home-doc-name">${d.name}</span>
-          <span class="home-doc-meta">${fmtSize(d.size)}</span>
-          <button class="home-doc-remove" data-id="${d.id}" title="Remove">✕</button>
-        </div>`).join("");
-      matsContent = `
-        <div class="home-doc-list">${docRows}</div>
-        <p class="home-doc-stat">${docs.length} doc${docs.length !== 1 ? "s" : ""} · ~${fmtW(totalWords)} words</p>`;
+
+      const zone = $("home-drop-zone");
+      if (zone) {
+        zone.addEventListener("click",     () => $("file-input").click());
+        zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
+        zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+        zone.addEventListener("drop", async e => {
+          e.preventDefault();
+          zone.classList.remove("drag-over");
+          for (const f of [...e.dataTransfer.files]) await this._addDocument(f);
+        });
+      }
+      $("home-browse")?.addEventListener("click", e => { e.stopPropagation(); $("file-input").click(); });
+      return;
     }
+
+    const cards = docs.map(d => `
+      <div class="nb-source-card" data-id="${d.id}">
+        <div class="nb-source-icon">📄</div>
+        <div class="nb-source-name">${d.name}</div>
+        <div class="nb-source-meta">${fmtSize(d.size)}${d.words ? ` · ~${fmtW(d.words)}w` : ""}</div>
+        <button class="nb-source-remove" data-id="${d.id}" title="Remove">✕</button>
+      </div>`).join("");
 
     panel.innerHTML = `
       <div class="home-wrap">
-        <div class="home-inner">
-          <div class="home-docs">
-            <div class="home-docs-head">
-              <span class="home-docs-title">Materials</span>
-              <button id="home-add-btn" class="btn-sm">+ Add</button>
-            </div>
-            ${matsContent}
+        <div class="home-inner home-inner--wide">
+          <div class="nb-sources-head">
+            <span class="nb-sources-title">Sources</span>
+            <button id="home-add-btn" class="btn-sm">+ Add</button>
           </div>
+          <div class="nb-source-grid">${cards}</div>
+          <p class="nb-doc-stat">${docs.length} source${docs.length !== 1 ? "s" : ""} · ~${fmtW(totalWords)} words</p>
           <div class="home-start-grid">
             <button class="home-start-btn primary" data-mode="chat">
               💬 Chat
@@ -523,26 +595,17 @@ class RecalApp {
 
     $("home-add-btn")?.addEventListener("click", () => $("file-input").click());
 
-    const zone = $("home-drop-zone");
-    if (zone) {
-      zone.addEventListener("click",     () => $("file-input").click());
-      zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
-      zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
-      zone.addEventListener("drop", async e => {
-        e.preventDefault();
-        zone.classList.remove("drag-over");
-        for (const f of [...e.dataTransfer.files]) await this._addDocument(f);
-      });
-    }
-    $("home-browse")?.addEventListener("click", e => { e.stopPropagation(); $("file-input").click(); });
-
-    panel.querySelectorAll(".home-start-btn[data-mode]").forEach(btn =>
-      btn.addEventListener("click", () => {
-        if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
-        this._switchMode(btn.dataset.mode);
+    panel.querySelectorAll(".nb-source-card").forEach(card =>
+      card.addEventListener("click", e => {
+        if (e.target.closest(".nb-source-remove")) return;
+        const id  = parseInt(card.dataset.id);
+        const doc = this.store.docs.find(d => d.id === id);
+        if (doc) { this.currentDocId = id; this._setNotesDoc(doc); }
+        this._switchMode("chat");
       })
     );
-    panel.querySelectorAll(".home-doc-remove").forEach(btn =>
+
+    panel.querySelectorAll(".nb-source-remove").forEach(btn =>
       btn.addEventListener("click", e => {
         e.stopPropagation();
         const id          = parseInt(btn.dataset.id);
@@ -550,8 +613,9 @@ class RecalApp {
         this._removeDoc(id, sidebarItem);
       })
     );
-    panel.querySelectorAll(".home-doc-row-open").forEach(row =>
-      row.addEventListener("click", () => this._openViewer(parseInt(row.dataset.id)))
+
+    panel.querySelectorAll(".home-start-btn[data-mode]").forEach(btn =>
+      btn.addEventListener("click", () => this._switchMode(btn.dataset.mode))
     );
   }
 
