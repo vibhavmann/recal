@@ -862,10 +862,9 @@ header {
   .home-start-btn.primary { grid-column: auto; }
 
   /* Viewer */
-  .viewer-layout { flex-direction: column; }
-  .viewer-doc { border-right: none; border-bottom: 1px solid var(--border); }
   .viewer-page { padding: 24px 20px; }
-  .viewer-notes { flex: 0 0 180px; }
+  /* Hide notes pane on mobile — too narrow */
+  #notes-drag, .viewer-notes { display: none; }
 }
 
 /* ── Home Panel ──────────────────────────────────────────────────────────────── */

@@ -121,11 +121,13 @@ class RecalApp {
     this.confidenceData = {};
     this.customTopics   = [];
     this.currentDocId   = null;
+    this._notesKey      = null;
 
     this._initUser();
     this._bindTheme();
     this._bindSidebarMobile();
     this._bindSidebar();
+    this._bindNotes();
     this._bindChat();
     this._bindNewChat();
     this._bindModes();
@@ -196,6 +198,58 @@ class RecalApp {
     $("chat-input").value = "";
     $("chat-input").style.height = "auto";
     this._switchMode("home");
+  }
+
+  // ── Notes pane ────────────────────────────────────────────────────────────────
+
+  _bindNotes() {
+    const ta     = $("viewer-notes-ta");
+    const handle = $("notes-drag");
+    const panel  = $("viewer-notes-panel");
+    if (!ta || !handle || !panel) return;
+
+    // Restore saved width
+    const savedW = parseInt(localStorage.getItem("recal-notes-width") ?? "260", 10);
+    panel.style.flex = `0 0 ${savedW}px`;
+
+    // Auto-save textarea to current doc key
+    ta.addEventListener("input", () => {
+      if (this._notesKey) localStorage.setItem(this._notesKey, ta.value);
+    });
+
+    // Drag-to-resize
+    let startX, startW;
+    const onMove = e => {
+      const newW = Math.max(140, Math.min(600, startW + (startX - e.clientX)));
+      panel.style.flex = `0 0 ${newW}px`;
+    };
+    const onUp = () => {
+      handle.classList.remove("dragging");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      localStorage.setItem("recal-notes-width", panel.offsetWidth);
+    };
+    handle.addEventListener("mousedown", e => {
+      startX = e.clientX;
+      startW = panel.offsetWidth;
+      handle.classList.add("dragging");
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+  }
+
+  _setNotesDoc(doc) {
+    const ta = $("viewer-notes-ta");
+    if (!ta) return;
+    if (doc) {
+      this._notesKey = `recal-notes-${doc.name}:${doc.size}`;
+      ta.value = localStorage.getItem(this._notesKey) ?? "";
+    } else {
+      this._notesKey = null;
+      ta.value = "";
+    }
+    ta.placeholder = doc ? `Notes for ${doc.name}…` : "Write your notes here…";
   }
 
   // ── Mobile sidebar ────────────────────────────────────────────────────────────
@@ -321,7 +375,8 @@ class RecalApp {
         </div>`;
     }
     this.topicsData = null;
-    if (this.mode === "viewer" && this.currentDocId === id) this._switchMode("home");
+    if (this.currentDocId === id) { this.currentDocId = null; this._setNotesDoc(null); }
+    if (this.mode === "viewer" && this.currentDocId === null) this._switchMode("home");
     else if (this.mode === "mastery") this._renderMasteryEmpty();
     this._renderHome();
   }
@@ -428,16 +483,13 @@ class RecalApp {
     const doc = this.store.docs.find(d => d.id === docId);
     if (!doc) return;
     this.currentDocId = docId;
+    this._setNotesDoc(doc);
     this._switchMode("viewer");
   }
 
   _renderViewer(doc) {
-    const notesKey   = `recal-notes-${doc.name}:${doc.size}`;
-    const savedNotes = localStorage.getItem(notesKey) ?? "";
-
     const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-    // Render all content in a single card so it always fills the canvas height
     const hasPages = /\[Page\s+\d+\]/.test(doc.text);
     let innerHtml;
 
@@ -457,9 +509,6 @@ class RecalApp {
       innerHtml = doc.text.split(/\n{2,}/).filter(p => p.trim())
         .map(p => `<p>${esc(p).replace(/\n/g,"<br>")}</p>`).join("");
     }
-    const pagesHtml = `<div class="viewer-page">${innerHtml}</div>`;
-
-    const savedNotesW = parseInt(localStorage.getItem("recal-notes-width") ?? "260", 10);
 
     $("panel-viewer").innerHTML = `
       <div class="viewer-layout">
@@ -468,44 +517,9 @@ class RecalApp {
             <span>${doc.name.endsWith(".pdf") ? "📄" : "📝"}</span>
             <span class="viewer-doc-name">${doc.name}</span>
           </div>
-          <div class="viewer-doc-canvas">${pagesHtml}</div>
-        </div>
-        <div class="notes-resize-handle" id="notes-drag"></div>
-        <div class="viewer-notes" id="viewer-notes-panel" style="flex: 0 0 ${savedNotesW}px">
-          <div class="viewer-notes-header">📝 Notes</div>
-          <textarea class="viewer-notes-area" id="viewer-notes-ta"
-            placeholder="Write your notes here…" spellcheck="true">${savedNotes}</textarea>
+          <div class="viewer-doc-canvas"><div class="viewer-page">${innerHtml}</div></div>
         </div>
       </div>`;
-
-    $("viewer-notes-ta")?.addEventListener("input", e =>
-      localStorage.setItem(notesKey, e.target.value)
-    );
-
-    // Drag-to-resize notes panel
-    const handle = $("notes-drag");
-    const notesPanel = $("viewer-notes-panel");
-    if (handle && notesPanel) {
-      let startX, startW;
-      const onMove = e => {
-        const newW = Math.max(140, Math.min(600, startW + (startX - e.clientX)));
-        notesPanel.style.flex = `0 0 ${newW}px`;
-      };
-      const onUp = () => {
-        handle.classList.remove("dragging");
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        localStorage.setItem("recal-notes-width", notesPanel.offsetWidth);
-      };
-      handle.addEventListener("mousedown", e => {
-        startX = e.clientX;
-        startW = notesPanel.offsetWidth;
-        handle.classList.add("dragging");
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
-        e.preventDefault();
-      });
-    }
   }
 
   _quickAction(action) {
