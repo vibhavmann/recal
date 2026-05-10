@@ -418,13 +418,29 @@ class RecalApp {
     const notesKey   = `recal-notes-${doc.name}:${doc.size}`;
     const savedNotes = localStorage.getItem(notesKey) ?? "";
 
-    const formatted = doc.text
-      .split(/\n{2,}/)
-      .filter(p => p.trim())
-      .map(p => `<p>${p
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        .replace(/\n/g, "<br>")}</p>`)
-      .join("");
+    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+    // Split on [Page N] markers if present (PDFs), otherwise treat as one block
+    const pagePattern = /\[Page\s+(\d+)\]/g;
+    const hasPages = pagePattern.test(doc.text);
+    let pagesHtml;
+
+    if (hasPages) {
+      const parts  = doc.text.split(/\[Page\s+\d+\]/);
+      const nums   = [...doc.text.matchAll(/\[Page\s+(\d+)\]/g)].map(m => m[1]);
+      pagesHtml = parts
+        .map((chunk, i) => {
+          if (!chunk.trim()) return "";
+          const paras = chunk.split(/\n{1,}/).filter(l => l.trim())
+            .map(l => `<p>${esc(l)}</p>`).join("");
+          const label = nums[i] ? `<div class="viewer-page-label">Page ${nums[i]}</div>` : "";
+          return `<div class="viewer-page">${label}${paras}</div>`;
+        }).join("");
+    } else {
+      const paras = doc.text.split(/\n{2,}/).filter(p => p.trim())
+        .map(p => `<p>${esc(p).replace(/\n/g,"<br>")}</p>`).join("");
+      pagesHtml = `<div class="viewer-page">${paras}</div>`;
+    }
 
     $("panel-viewer").innerHTML = `
       <div class="viewer-layout">
@@ -433,7 +449,7 @@ class RecalApp {
             <span>${doc.name.endsWith(".pdf") ? "📄" : "📝"}</span>
             <span class="viewer-doc-name">${doc.name}</span>
           </div>
-          <div class="viewer-doc-body">${formatted}</div>
+          <div class="viewer-doc-canvas">${pagesHtml}</div>
         </div>
         <div class="viewer-notes">
           <div class="viewer-notes-header">📝 Notes</div>
