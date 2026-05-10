@@ -35,24 +35,25 @@
 }
 
 [data-theme="dark"] {
-  --bg:          #0f172a;
-  --bg-card:     #1e293b;
-  --bg-sidebar:  #1e293b;
-  --bg-header:   #1e293b;
-  --bg-input:    #0f172a;
-  --border:      #334155;
-  --txt:         #f1f5f9;
-  --txt-2:       #94a3b8;
-  --txt-3:       #475569;
-  --clr-primary-lt: #1e1b4b;
-  --shadow:      0 1px 3px rgba(0,0,0,.3);
-  --shadow-md:   0 4px 12px rgba(0,0,0,.3);
-  --shadow-lg:   0 10px 30px rgba(0,0,0,.4);
+  --bg:          #09090b;
+  --bg-card:     #141414;
+  --bg-sidebar:  #111111;
+  --bg-header:   #0d0d0d;
+  --bg-input:    #1c1c1e;
+  --border:      #2a2a2a;
+  --txt:         #f2f2f2;
+  --txt-2:       #a0a0a0;
+  --txt-3:       #555555;
+  --clr-primary-lt: #1a1625;
+  --viewer-canvas: #1a1a1a;
+  --shadow:      0 1px 4px rgba(0,0,0,.5);
+  --shadow-md:   0 4px 16px rgba(0,0,0,.5);
+  --shadow-lg:   0 12px 36px rgba(0,0,0,.6);
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 15px; }
+html { font-size: 15px; -webkit-font-smoothing: antialiased; }
 body {
   font-family: var(--font);
   background: var(--bg);
@@ -63,6 +64,14 @@ body {
 a { color: var(--clr-primary); }
 img { max-width: 100%; }
 button { cursor: pointer; border: none; background: none; font-family: inherit; }
+
+/* ── Custom scrollbars ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--txt-3); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #2e2e2e; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #444; }
 input, textarea, select {
   font-family: inherit;
   color: var(--txt);
@@ -192,6 +201,7 @@ header {
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────────── */
 .sidebar {
+  position: relative;
   width: var(--sidebar-w);
   flex-shrink: 0;
   background: var(--bg-sidebar);
@@ -204,6 +214,18 @@ header {
   width: 0;
   border-right-color: transparent;
 }
+.sidebar-resize-handle {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background 0.15s;
+  user-select: none;
+}
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle.dragging { background: var(--clr-primary); opacity: 0.5; }
 .sidebar.drag-over { background: var(--clr-primary-lt); }
 .sidebar-top { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .sidebar-header {

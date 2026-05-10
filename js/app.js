@@ -129,6 +129,7 @@ class RecalApp {
     this._initUser();
     this._bindTheme();
     this._bindSidebarMobile();
+    this._bindSidebarResize();
     this._bindSidebar();
     this._bindNotes();
     this._bindChat();
@@ -236,6 +237,37 @@ class RecalApp {
     handle.addEventListener("mousedown", e => {
       startX = e.clientX;
       startW = panel.offsetWidth;
+      handle.classList.add("dragging");
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+  }
+
+  _bindSidebarResize() {
+    const handle  = $("sidebar-drag");
+    const sidebar = $("sidebar");
+    if (!handle || !sidebar) return;
+
+    const savedW = parseInt(localStorage.getItem("recal-sidebar-width") ?? "260", 10);
+    document.documentElement.style.setProperty("--sidebar-w", savedW + "px");
+
+    let startX, startW;
+    const onMove = e => {
+      if (sidebar.classList.contains("collapsed")) return;
+      const newW = Math.max(160, Math.min(500, startW + (e.clientX - startX)));
+      document.documentElement.style.setProperty("--sidebar-w", newW + "px");
+    };
+    const onUp = () => {
+      handle.classList.remove("dragging");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      localStorage.setItem("recal-sidebar-width", sidebar.offsetWidth);
+    };
+    handle.addEventListener("mousedown", e => {
+      if (sidebar.classList.contains("collapsed")) return;
+      startX = e.clientX;
+      startW = sidebar.offsetWidth;
       handle.classList.add("dragging");
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
