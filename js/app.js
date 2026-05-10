@@ -442,6 +442,8 @@ class RecalApp {
     }
     const pagesHtml = `<div class="viewer-page">${innerHtml}</div>`;
 
+    const savedNotesW = parseInt(localStorage.getItem("recal-notes-width") ?? "260", 10);
+
     $("panel-viewer").innerHTML = `
       <div class="viewer-layout">
         <div class="viewer-doc">
@@ -451,7 +453,8 @@ class RecalApp {
           </div>
           <div class="viewer-doc-canvas">${pagesHtml}</div>
         </div>
-        <div class="viewer-notes">
+        <div class="notes-resize-handle" id="notes-drag"></div>
+        <div class="viewer-notes" id="viewer-notes-panel" style="flex: 0 0 ${savedNotesW}px">
           <div class="viewer-notes-header">📝 Notes</div>
           <textarea class="viewer-notes-area" id="viewer-notes-ta"
             placeholder="Write your notes here…" spellcheck="true">${savedNotes}</textarea>
@@ -461,6 +464,31 @@ class RecalApp {
     $("viewer-notes-ta")?.addEventListener("input", e =>
       localStorage.setItem(notesKey, e.target.value)
     );
+
+    // Drag-to-resize notes panel
+    const handle = $("notes-drag");
+    const notesPanel = $("viewer-notes-panel");
+    if (handle && notesPanel) {
+      let startX, startW;
+      const onMove = e => {
+        const newW = Math.max(140, Math.min(600, startW + (startX - e.clientX)));
+        notesPanel.style.flex = `0 0 ${newW}px`;
+      };
+      const onUp = () => {
+        handle.classList.remove("dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        localStorage.setItem("recal-notes-width", notesPanel.offsetWidth);
+      };
+      handle.addEventListener("mousedown", e => {
+        startX = e.clientX;
+        startW = notesPanel.offsetWidth;
+        handle.classList.add("dragging");
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        e.preventDefault();
+      });
+    }
   }
 
   _quickAction(action) {

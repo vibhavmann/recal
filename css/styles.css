@@ -204,7 +204,7 @@ header {
 .sidebar-top { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .sidebar-header {
   display: flex; align-items: center; gap: 8px;
-  padding: 14px 14px 10px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -994,9 +994,18 @@ header {
 /* Left: document area */
 .viewer-doc {
   flex: 1; min-width: 0;
-  border-right: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
 }
+/* Drag handle between doc and notes */
+.notes-resize-handle {
+  width: 5px; flex-shrink: 0;
+  background: var(--border);
+  cursor: col-resize;
+  transition: background 0.15s;
+  user-select: none;
+}
+.notes-resize-handle:hover,
+.notes-resize-handle.dragging { background: var(--clr-primary); }
 .viewer-doc-header {
   position: sticky; top: 0; z-index: 5;
   background: var(--bg-card);
