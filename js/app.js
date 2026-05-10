@@ -314,110 +314,32 @@ class RecalApp {
     const panel = $("panel-home");
     if (!panel) return;
 
-    const featCompare = `
-      <div class="feat-compare">
-        <div class="feat-col">
-          <div class="feat-col-head">Basic</div>
-          <div class="feat-row">
-            <div class="feat-icon">📊</div>
-            <div>
-              <div class="feat-name">Mastery Tracker</div>
-              <div class="feat-desc">See which topics you've covered and mark them as learned.</div>
-            </div>
-          </div>
-          <div class="feat-row">
-            <div class="feat-icon">📅</div>
-            <div>
-              <div class="feat-name">Study Plan</div>
-              <div class="feat-desc">Structured schedule to work through all topics systematically.</div>
-            </div>
-          </div>
-          <div class="feat-row">
-            <div class="feat-icon">🎯</div>
-            <div>
-              <div class="feat-name">Practice Tests</div>
-              <div class="feat-desc">Self-paced review of your uploaded materials.</div>
-            </div>
-          </div>
-        </div>
-        <div class="feat-ai-col">
-          <div class="feat-col-head">Advanced <span class="ai-badge">AI</span></div>
-          <div class="feat-row has-tip" data-tip="Claude auto-extracts topics from your documents">
-            <div class="feat-icon">🤖</div>
-            <div>
-              <div class="feat-name">Auto Topic Extraction</div>
-              <div class="feat-desc">Claude reads your docs and builds a mastery map instantly.</div>
-            </div>
-          </div>
-          <div class="feat-row has-tip" data-tip="AI builds a plan from your mastery gaps">
-            <div class="feat-icon">🤖</div>
-            <div>
-              <div class="feat-name">Adaptive Study Plan</div>
-              <div class="feat-desc">Plan adjusts automatically based on what you know.</div>
-            </div>
-          </div>
-          <div class="feat-row has-tip" data-tip="AI generates questions targeting your weak topics">
-            <div class="feat-icon">🤖</div>
-            <div>
-              <div class="feat-name">AI-Generated Tests</div>
-              <div class="feat-desc">Adaptive questions that focus on your gaps.</div>
-            </div>
-          </div>
-          <div class="feat-row has-tip" data-tip="Chat with Claude about any concept in your materials">
-            <div class="feat-icon">💬</div>
-            <div>
-              <div class="feat-name">Concept Chat</div>
-              <div class="feat-desc">Ask anything — get explanations, analogies, and examples.</div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-
-    if (!this.store.hasContent) {
-      panel.innerHTML = `
-        <div class="home-wrap">
-          <div class="home-inner">
-            <div class="home-hero">
-              <div class="home-hero-logo">🎓</div>
-              <h1 class="home-hero-title"><span>Re</span><span class="accent">cal</span></h1>
-              <p class="home-hero-sub">Your adaptive study companion — upload your materials and start learning smarter.</p>
-            </div>
-            ${featCompare}
-            <div class="home-docs">
-              <div class="home-upload-zone" id="home-drop-zone">
-                <div class="home-upload-icon">📂</div>
-                <p class="home-upload-label">Drop files here or <button class="upload-link" id="home-browse">browse</button></p>
-                <p class="home-upload-hint">PDF · TXT · Markdown · CSV</p>
-              </div>
-            </div>
-          </div>
-        </div>`;
-
-      $("home-browse")?.addEventListener("click", e => { e.stopPropagation(); $("file-input").click(); });
-      const zone = $("home-drop-zone");
-      zone?.addEventListener("click",     () => $("file-input").click());
-      zone?.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
-      zone?.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
-      zone?.addEventListener("drop", async e => {
-        e.preventDefault();
-        zone.classList.remove("drag-over");
-        for (const f of [...e.dataTransfer.files]) await this._addDocument(f);
-      });
-      return;
-    }
-
+    const hasDocs    = this.store.hasContent;
     const docs       = this.store.docs;
-    const totalWords = docs.reduce((s, d) => s + (d.words ?? 0), 0);
     const fmtW       = n => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
     const ext        = name => name.split(".").pop().toUpperCase();
+    const totalWords = docs.reduce((s, d) => s + (d.words ?? 0), 0);
 
-    const docRows = docs.map(d => `
-      <div class="home-doc-row">
-        <span class="home-doc-badge">${ext(d.name)}</span>
-        <span class="home-doc-name">${d.name}</span>
-        <span class="home-doc-meta">${fmtSize(d.size)}</span>
-        <button class="home-doc-remove" data-id="${d.id}" title="Remove">✕</button>
-      </div>`).join("");
+    let matsContent;
+    if (!hasDocs) {
+      matsContent = `
+        <div class="home-upload-zone" id="home-drop-zone">
+          <div class="home-upload-icon">📂</div>
+          <p class="home-upload-label">Drop files here or <button class="upload-link" id="home-browse">browse</button></p>
+          <p class="home-upload-hint">PDF · TXT · Markdown · CSV</p>
+        </div>`;
+    } else {
+      const docRows = docs.map(d => `
+        <div class="home-doc-row">
+          <span class="home-doc-badge">${ext(d.name)}</span>
+          <span class="home-doc-name">${d.name}</span>
+          <span class="home-doc-meta">${fmtSize(d.size)}</span>
+          <button class="home-doc-remove" data-id="${d.id}" title="Remove">✕</button>
+        </div>`).join("");
+      matsContent = `
+        <div class="home-doc-list">${docRows}</div>
+        <p class="home-doc-stat">${docs.length} doc${docs.length !== 1 ? "s" : ""} · ~${fmtW(totalWords)} words</p>`;
+    }
 
     panel.innerHTML = `
       <div class="home-wrap">
@@ -427,42 +349,54 @@ class RecalApp {
             <h1 class="home-hero-title"><span>Re</span><span class="accent">cal</span></h1>
             <p class="home-hero-sub">Your adaptive study companion.</p>
           </div>
-          ${featCompare}
           <div class="home-docs">
             <div class="home-docs-head">
-              <span class="home-docs-title">Your Materials</span>
-              <button id="home-add-btn" class="btn-sm">+ Add More</button>
+              <span class="home-docs-title">Materials</span>
+              <button id="home-add-btn" class="btn-sm">+ Add</button>
             </div>
-            <div class="home-doc-list">${docRows}</div>
-            <p style="font-size:.82rem;color:var(--txt-3)">${docs.length} document${docs.length !== 1 ? "s" : ""} · ~${fmtW(totalWords)} words total</p>
-            <div class="home-start">
-              <span class="home-start-label">Where do you want to start?</span>
-              <div class="home-start-grid">
-                <button class="home-start-btn primary" data-mode="chat">
-                  💬 Chat about these materials
-                  <span>Ask questions and get concept explanations</span>
-                </button>
-                <button class="home-start-btn" data-mode="test">
-                  🎯 Practice test
-                  <span>Adaptive questions from your materials</span>
-                </button>
-                <button class="home-start-btn" data-mode="mastery">
-                  📊 Mastery breakdown
-                  <span>See what you know and what needs work</span>
-                </button>
-                <button class="home-start-btn" data-mode="plan">
-                  📅 Study plan
-                  <span>Personalised schedule with spaced repetition</span>
-                </button>
-              </div>
-            </div>
+            ${matsContent}
+          </div>
+          <div class="home-start-grid">
+            <button class="home-start-btn primary" data-mode="chat">
+              💬 Chat
+              <span>Ask questions and get concept explanations</span>
+            </button>
+            <button class="home-start-btn" data-mode="test">
+              🎯 Practice test
+              <span>Adaptive questions from your materials</span>
+            </button>
+            <button class="home-start-btn" data-mode="mastery">
+              📊 Mastery
+              <span>See what you know and what needs work</span>
+            </button>
+            <button class="home-start-btn" data-mode="plan">
+              📅 Study plan
+              <span>Personalised schedule with spaced repetition</span>
+            </button>
           </div>
         </div>
       </div>`;
 
     $("home-add-btn")?.addEventListener("click", () => $("file-input").click());
+
+    const zone = $("home-drop-zone");
+    if (zone) {
+      zone.addEventListener("click",     () => $("file-input").click());
+      zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
+      zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+      zone.addEventListener("drop", async e => {
+        e.preventDefault();
+        zone.classList.remove("drag-over");
+        for (const f of [...e.dataTransfer.files]) await this._addDocument(f);
+      });
+    }
+    $("home-browse")?.addEventListener("click", e => { e.stopPropagation(); $("file-input").click(); });
+
     panel.querySelectorAll(".home-start-btn[data-mode]").forEach(btn =>
-      btn.addEventListener("click", () => this._switchMode(btn.dataset.mode))
+      btn.addEventListener("click", () => {
+        if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+        this._switchMode(btn.dataset.mode);
+      })
     );
     panel.querySelectorAll(".home-doc-remove").forEach(btn =>
       btn.addEventListener("click", () => {
