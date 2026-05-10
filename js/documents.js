@@ -30,9 +30,10 @@ export class DocumentStore {
     } else {
       text = await file.text();
     }
-    const id     = this._uid++;
+    const id    = this._uid++;
+    const words = text.split(/\s+/).filter(Boolean).length;
     const chunks = this._chunk(text, 600, 80);
-    this._docs.set(id, { id, name: file.name, text, chunks, size: file.size });
+    this._docs.set(id, { id, name: file.name, text, chunks, size: file.size, words });
     return id;
   }
 

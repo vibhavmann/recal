@@ -105,19 +105,13 @@ async function generate({ messages, mode, temperature = 0.3 }) {
   return full;
 }
 
-// ─── Welcome HTML ─────────────────────────────────────────────────────────────
+// ─── Welcome HTML (chat new-chat reset) ──────────────────────────────────────
 
 const WELCOME_HTML = `
   <div class="welcome">
     <div class="welcome-logo">🎓</div>
     <h2>Welcome to Recal!</h2>
-    <p>Upload your study materials and ask me anything — I'll explain concepts clearly and help you master them.</p>
-    <div class="feature-list">
-      <div class="feature">🎯 Adaptive practice tests that adjust to your level</div>
-      <div class="feature">💡 Concept explanations with analogies &amp; examples</div>
-      <div class="feature">📊 Per-topic mastery tracking with checkboxes</div>
-      <div class="feature">📅 Personalised study plans that update in real-time</div>
-    </div>
+    <p>Ask me anything about your materials — I'll explain concepts with analogies and examples.</p>
   </div>`;
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -126,7 +120,7 @@ class RecalApp {
   constructor() {
     this.store          = new DocumentStore();
     this.history        = [];
-    this.mode           = "chat";
+    this.mode           = "home";
     this.generating     = false;
     this._topicsLoading = false;
     this.topicsData     = null;
@@ -142,9 +136,13 @@ class RecalApp {
     this._bindModes();
     this._bindTest();
     this._bindPlan();
+    this._renderHome();
     this._renderTestSetup();
     this._renderPlanSetup();
     this._renderMasteryEmpty();
+
+    document.querySelector(".brand-sm")
+      ?.addEventListener("click", () => this._switchMode("home"));
   }
 
   // ── User memory ───────────────────────────────────────────────────────────────
@@ -201,7 +199,7 @@ class RecalApp {
     $("chat-messages").innerHTML = WELCOME_HTML;
     $("chat-input").value = "";
     $("chat-input").style.height = "auto";
-    this._switchMode("chat");
+    this._switchMode("home");
   }
 
   // ── Mobile sidebar ────────────────────────────────────────────────────────────
@@ -263,6 +261,7 @@ class RecalApp {
       this._toast(`Added: ${file.name}`, "success");
       this.topicsData = null;
       if (this.mode === "mastery") this._renderMasteryEmpty();
+      this._renderHome();
     } catch (err) {
       item.dataset.state = "error";
       item.querySelector(".doc-status").textContent = "❌ Failed";
@@ -288,23 +287,130 @@ class RecalApp {
   }
 
   _finaliseDocItem(item, id, name, size) {
-    item.dataset.state = "ready";
+    item.dataset.state  = "ready";
+    item.dataset.docid  = id;
     item.querySelector(".doc-status").textContent = fmtSize(size);
     const btn = item.querySelector(".doc-remove");
     btn.classList.remove("hidden");
-    btn.addEventListener("click", () => {
-      this.store.removeDoc(id);
-      item.remove();
-      if (!this.store.hasContent) {
-        $("doc-list").innerHTML = `
-          <div class="empty-docs">
-            <span>📚</span><p>No materials yet</p>
-            <p>Upload PDFs, text files, or notes</p>
-          </div>`;
-      }
-      this.topicsData = null;
-      if (this.mode === "mastery") this._renderMasteryEmpty();
-    });
+    btn.addEventListener("click", () => this._removeDoc(id, item));
+  }
+
+  _removeDoc(id, sidebarItem) {
+    this.store.removeDoc(id);
+    sidebarItem?.remove();
+    if (!this.store.hasContent) {
+      $("doc-list").innerHTML = `
+        <div class="empty-docs">
+          <span>📚</span><p>No materials yet</p>
+          <p>Upload PDFs, text files, or notes</p>
+        </div>`;
+    }
+    this.topicsData = null;
+    if (this.mode === "mastery") this._renderMasteryEmpty();
+    this._renderHome();
+  }
+
+  _renderHome() {
+    const panel = $("panel-home");
+    if (!panel) return;
+
+    if (!this.store.hasContent) {
+      panel.innerHTML = `
+        <div class="home-wrap">
+          <div class="onboarding-inner">
+            <div class="onboarding-logo">🎓</div>
+            <h1 class="onboarding-title"><span>Re</span><span class="accent">cal</span></h1>
+            <p class="onboarding-tagline">Your adaptive study companion.</p>
+            <p class="onboarding-desc">Upload your notes, textbooks, or slides — Recal turns them into adaptive tests, concept explanations, mastery tracking, and a personalised study plan. No AI required to get started.</p>
+            <div class="upload-zone" id="home-drop-zone">
+              <div class="upload-zone-icon">📂</div>
+              <p class="upload-zone-label">Drop files here or <button class="upload-link" id="home-browse">browse</button></p>
+              <p class="upload-zone-hint">PDF · TXT · Markdown · CSV</p>
+            </div>
+            <div class="onboarding-features">
+              <div class="ob-feat">🎯 Adaptive tests</div>
+              <div class="ob-feat">💡 Concept chat</div>
+              <div class="ob-feat">📊 Mastery tracking</div>
+              <div class="ob-feat">📅 Study plans</div>
+            </div>
+          </div>
+        </div>`;
+
+      $("home-browse")?.addEventListener("click", e => { e.stopPropagation(); $("file-input").click(); });
+      const zone = $("home-drop-zone");
+      zone?.addEventListener("click",     () => $("file-input").click());
+      zone?.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
+      zone?.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+      zone?.addEventListener("drop", async e => {
+        e.preventDefault();
+        zone.classList.remove("drag-over");
+        for (const f of [...e.dataTransfer.files]) await this._addDocument(f);
+      });
+      return;
+    }
+
+    const docs       = this.store.docs;
+    const totalWords = docs.reduce((s, d) => s + (d.words ?? 0), 0);
+    const fmtW       = n => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+    const ext        = name => name.split(".").pop().toUpperCase();
+
+    const rows = docs.map(d => `
+      <tr>
+        <td class="doc-name-cell">
+          <span class="doc-type-badge">${ext(d.name)}</span>${d.name}
+        </td>
+        <td>${fmtSize(d.size)}</td>
+        <td>~${fmtW(d.words ?? 0)} words</td>
+        <td><button class="doc-remove-home" data-id="${d.id}" title="Remove">✕</button></td>
+      </tr>`).join("");
+
+    panel.innerHTML = `
+      <div class="home-wrap">
+        <div class="dashboard-inner">
+          <div class="dashboard-header">
+            <h2>Your Materials</h2>
+            <button id="home-add-btn" class="btn-sm">+ Add More</button>
+          </div>
+          <table class="doc-overview-table">
+            <thead><tr><th>Document</th><th>Size</th><th>Length</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <p class="dashboard-stats">${docs.length} document${docs.length !== 1 ? "s" : ""} · ~${fmtW(totalWords)} words total</p>
+          <div class="dashboard-cta">
+            <p class="cta-heading">Where do you want to start?</p>
+            <div class="cta-grid">
+              <button class="cta-btn cta-primary" data-mode="chat">
+                💬 Chat about these materials
+                <span>Ask questions and get concept explanations with analogies</span>
+              </button>
+              <button class="cta-btn" data-mode="test">
+                🎯 Take a practice test
+                <span>Adaptive questions based on your materials</span>
+              </button>
+              <button class="cta-btn" data-mode="mastery">
+                📊 View mastery breakdown
+                <span>See what you know and what needs work</span>
+              </button>
+              <button class="cta-btn" data-mode="plan">
+                📅 Build a study plan
+                <span>Personalised schedule with spaced repetition</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    $("home-add-btn")?.addEventListener("click", () => $("file-input").click());
+    panel.querySelectorAll(".cta-btn[data-mode]").forEach(btn =>
+      btn.addEventListener("click", () => this._switchMode(btn.dataset.mode))
+    );
+    panel.querySelectorAll(".doc-remove-home").forEach(btn =>
+      btn.addEventListener("click", () => {
+        const id          = parseInt(btn.dataset.id);
+        const sidebarItem = $("doc-list").querySelector(`[data-docid="${id}"]`);
+        this._removeDoc(id, sidebarItem);
+      })
+    );
   }
 
   _quickAction(action) {
@@ -339,6 +445,7 @@ class RecalApp {
       if (this.topicsData) this._renderMastery();
       else if (this.store.hasContent) this._extractMastery();
     }
+    if (mode === "home") this._renderHome();
   }
 
   // ── Chat ──────────────────────────────────────────────────────────────────────
