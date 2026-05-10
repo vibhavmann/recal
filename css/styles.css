@@ -288,9 +288,6 @@ header {
 .panel.active { display: flex; }
 
 /* ── Chat Panel ────────────────────────────────────────────────────────────── */
-#panel-chat {
-  display: flex; flex-direction: column;
-}
 .chat-messages {
   flex: 1;
   overflow-y: auto;
