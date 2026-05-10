@@ -353,9 +353,8 @@ class RecalApp {
   }
 
   async _addDocument(file) {
-    const okExts = [".txt", ".pdf", ".md", ".csv", ".markdown"];
-    if (!okExts.some(e => file.name.toLowerCase().endsWith(e))) {
-      this._toast(`Unsupported file type: ${file.name}`, "error"); return;
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+      this._toast(`Only PDF files are supported.`, "error"); return;
     }
     const item = this._addDocItem(file.name);
     try {
@@ -476,7 +475,7 @@ class RecalApp {
         <div class="home-upload-zone" id="home-drop-zone">
           <div class="home-upload-icon">📂</div>
           <p class="home-upload-label">Drop files here or <button class="upload-link" id="home-browse">browse</button></p>
-          <p class="home-upload-hint">PDF · TXT · Markdown · CSV</p>
+          <p class="home-upload-hint">PDF files only</p>
         </div>`;
     } else {
       const docRows = docs.map(d => `
@@ -567,19 +566,7 @@ class RecalApp {
   }
 
   _renderViewer(doc) {
-    const ext    = doc.name.split(".").pop().toLowerCase();
     const pdfDoc = this.store.getPDFDoc(doc.id);
-
-    let innerHtml;
-    if (pdfDoc) {
-      innerHtml = `<div id="vp-pdf-pages" class="pdf-pages-wrap">
-        <p class="pdf-pages-loading">Rendering pages…</p>
-      </div>`;
-    } else if (ext === "md" || ext === "markdown") {
-      innerHtml = `<div class="viewer-markdown">${md(doc.text)}</div>`;
-    } else {
-      innerHtml = this._renderTextContent(doc.text);
-    }
 
     const enrichHtml = doc.enrich
       ? `<div class="viewer-enrich">
@@ -597,33 +584,123 @@ class RecalApp {
       <div class="viewer-layout">
         <div class="viewer-doc">
           <div class="viewer-doc-header">
-            <span>${doc.name.endsWith(".pdf") ? "📄" : "📝"}</span>
+            <span>📄</span>
             <span class="viewer-doc-name">${doc.name}</span>
           </div>
-          <div class="viewer-doc-canvas"><div class="viewer-page viewer-page--pdf">${enrichHtml}${innerHtml}</div></div>
+          <div class="viewer-doc-canvas">
+            <div class="viewer-page">
+              ${enrichHtml}
+              <div class="pdf-notice">
+                <span class="pdf-notice-icon">ℹ</span>
+                <span>Images, diagrams, mathematical formulas, and complex multi-column layouts cannot be fully replicated — they appear as linearised text below.</span>
+              </div>
+              <div id="vp-pdf-content"><p class="pdf-loading">Loading pages…</p></div>
+            </div>
+          </div>
         </div>
       </div>`;
 
-    if (pdfDoc) this._renderPDFCanvases(doc.id, pdfDoc);
+    if (pdfDoc) this._renderStructuredPDF(doc.id, pdfDoc);
   }
 
-  async _renderPDFCanvases(docId, pdfDoc) {
-    const wrap  = $("vp-pdf-pages");
-    if (!wrap) return;
-    const scale = window.devicePixelRatio >= 2 ? 2.0 : 1.5;
-    let first   = true;
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-      if (this.currentDocId !== docId || !wrap.isConnected) break;
-      const page     = await pdfDoc.getPage(i);
-      const viewport = page.getViewport({ scale });
-      const canvas   = document.createElement("canvas");
-      canvas.width   = viewport.width;
-      canvas.height  = viewport.height;
-      canvas.className = "pdf-canvas-page";
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-      if (this.currentDocId !== docId || !wrap.isConnected) break;
-      if (first) { wrap.innerHTML = ""; first = false; }
-      wrap.appendChild(canvas);
+  async _renderStructuredPDF(docId, pdfDoc) {
+    const container = $("vp-pdf-content");
+    if (!container) return;
+    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      if (this.currentDocId !== docId || !container.isConnected) break;
+
+      const page    = await pdfDoc.getPage(pageNum);
+      const content = await page.getTextContent();
+      const items   = content.items.filter(it => typeof it.str === "string");
+      if (!items.length) continue;
+
+      // Median font size for this page = body text reference
+      const sizes    = items.map(it => Math.abs(it.transform[3])).filter(s => s > 1).sort((a,b) => a - b);
+      const bodySize = sizes[Math.floor(sizes.length / 2)] || 12;
+
+      // Group items into lines by rounded y-coordinate (±2 pt tolerance)
+      const byY = new Map();
+      for (const item of items) {
+        const y = Math.round(item.transform[5] / 2) * 2;
+        if (!byY.has(y)) byY.set(y, []);
+        byY.get(y).push({
+          str:      item.str,
+          x:        item.transform[4],
+          fontSize: Math.abs(item.transform[3]),
+          fontName: item.fontName || "",
+        });
+      }
+
+      // Sort lines top-to-bottom (PDF y-axis is bottom-up)
+      const lines = [...byY.entries()]
+        .sort(([ya],[yb]) => yb - ya)
+        .map(([y, its]) => ({
+          y,
+          items:       its.sort((a,b) => a.x - b.x),
+          maxFontSize: Math.max(...its.map(i => i.fontSize)),
+          text:        its.sort((a,b) => a.x - b.x).map(i => i.str).join(""),
+        }));
+
+      // 40th-percentile gap = typical single line spacing for this page
+      const gaps = lines.slice(1).map((l,i) => lines[i].y - l.y).filter(g => g > 0).sort((a,b) => a - b);
+      const typicalGap = gaps[Math.floor(gaps.length * 0.4)] || 14;
+
+      // Accumulate lines into paragraphs, flush when gap or heading transition
+      const pageHtml = [];
+      let   paraLines = [];
+      let   lastY     = null;
+
+      const flushPara = () => {
+        if (!paraLines.length) return;
+        const maxSize = Math.max(...paraLines.map(l => l.maxFontSize));
+        const html = paraLines.map(line =>
+          line.items.map(it => {
+            const t      = esc(it.str);
+            const bold   = /bold|heavy|black/i.test(it.fontName);
+            const italic = /italic|oblique/i.test(it.fontName);
+            if (bold && italic) return `<strong><em>${t}</em></strong>`;
+            if (bold)           return `<strong>${t}</strong>`;
+            if (italic)         return `<em>${t}</em>`;
+            return t;
+          }).join("")
+        ).join(" ");
+
+        if (!html.trim()) { paraLines = []; return; }
+        if      (maxSize > bodySize * 1.9) pageHtml.push(`<h2 class="pdf-h2">${html}</h2>`);
+        else if (maxSize > bodySize * 1.4) pageHtml.push(`<h3 class="pdf-h3">${html}</h3>`);
+        else if (maxSize > bodySize * 1.2) pageHtml.push(`<h4 class="pdf-h4">${html}</h4>`);
+        else                               pageHtml.push(`<p>${html}</p>`);
+        paraLines = [];
+      };
+
+      for (const line of lines) {
+        if (!line.text.trim()) continue;
+        const gap         = lastY !== null ? lastY - line.y : 0;
+        const isNewBlock  = paraLines.length && (
+          gap > typicalGap * 1.6 ||
+          (line.maxFontSize > bodySize * 1.2 && (paraLines.at(-1)?.maxFontSize ?? 0) <= bodySize * 1.1)
+        );
+        if (isNewBlock) flushPara();
+        paraLines.push(line);
+        lastY = line.y;
+      }
+      flushPara();
+
+      if (this.currentDocId !== docId || !container.isConnected) break;
+
+      const divider = document.createElement("div");
+      divider.className = "viewer-page-divider" + (pageNum === 1 ? " viewer-page-divider--first" : "");
+      divider.textContent = `Page ${pageNum}`;
+      container.appendChild(divider);
+
+      const pageEl = document.createElement("div");
+      pageEl.className = "pdf-text-page";
+      pageEl.innerHTML = pageHtml.join("");
+      container.appendChild(pageEl);
+
+      if (pageNum === 1) container.querySelector(".pdf-loading")?.remove();
     }
   }
 

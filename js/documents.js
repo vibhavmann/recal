@@ -23,17 +23,13 @@ export class DocumentStore {
   }
 
   async addFile(file) {
-    let text;
-    let pdfDoc = null;
-    if (file.name.endsWith(".pdf") || file.type === "application/pdf") {
-      await this._pdfPromise;
-      pdfDoc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-      text   = await this._extractPDFText(pdfDoc);
-    } else {
-      text = await file.text();
-    }
-    const id    = this._uid++;
-    const words = text.split(/\s+/).filter(Boolean).length;
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf")
+      throw new Error("Only PDF files are supported.");
+    await this._pdfPromise;
+    const pdfDoc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const text   = await this._extractPDFText(pdfDoc);
+    const id     = this._uid++;
+    const words  = text.split(/\s+/).filter(Boolean).length;
     const chunks = this._chunk(text, 600, 80);
     this._docs.set(id, { id, name: file.name, text, chunks, size: file.size, words, pdfDoc });
     return id;
