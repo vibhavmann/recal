@@ -601,7 +601,29 @@ header {
 .result-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
 .result-q { font-size: .85rem; font-weight: 500; }
 .result-meta { font-size: .75rem; color: var(--txt-3); margin-top: 2px; }
-.results-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.results-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px; }
+
+/* Post-test explanation prompt */
+.explain-prompt {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--clr-primary-lt);
+  border: 1px solid var(--clr-primary);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.explain-prompt-text { display: flex; align-items: flex-start; gap: 12px; flex: 1; }
+.explain-icon { font-size: 1.4rem; flex-shrink: 0; }
+.explain-prompt-text strong { font-size: .9rem; color: var(--txt); }
+.explain-prompt-text p { font-size: .82rem; color: var(--txt-2); margin-top: 2px; }
+.test-explanation { margin-bottom: 8px; }
+.test-explanation.hidden { display: none; }
+.explain-generating { display: flex; align-items: center; gap: 12px; padding: 16px 0; color: var(--txt-2); font-size: .88rem; }
+.explain-output { font-size: .88rem; line-height: 1.7; padding: 20px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.explain-output h1,.explain-output h2,.explain-output h3 { margin: 1em 0 .4em; font-size: 1rem; }
+.explain-output p { margin-bottom: .7em; }
 
 /* ── Study Plan ────────────────────────────────────────────────────────────── */
 .plan-output .panel-inner { max-width: 900px; }

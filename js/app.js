@@ -120,9 +120,11 @@ class RecalApp {
     this.masteryScores  = {};
     this.confidenceData = {};
     this.customTopics   = [];
-    this.currentDocId     = null;
-    this._notesKey        = null;
+    this.currentDocId      = null;
+    this._notesKey         = null;
     this._chatScrollLocked = false;
+    this._planHasContent   = false;
+    this._masteryHasContent = false;
 
     this._initUser();
     this._bindTheme();
@@ -328,7 +330,10 @@ class RecalApp {
       const id = await this.store.addFile(file);
       this._finaliseDocItem(item, id, file.name, file.size);
       this._toast(`Added: ${file.name}`, "success");
-      this.topicsData = null;
+      this.topicsData         = null;
+      this.testState          = null;
+      this._planHasContent    = false;
+      this._masteryHasContent = false;
       this._renderHome();
       this._openViewer(id);
     } catch (err) {
@@ -376,7 +381,10 @@ class RecalApp {
           <p>Upload PDFs, text files, or notes</p>
         </div>`;
     }
-    this.topicsData = null;
+    this.topicsData         = null;
+    this.testState          = null;
+    this._planHasContent    = false;
+    this._masteryHasContent = false;
     if (this.currentDocId === id) { this.currentDocId = null; this._setNotesDoc(null); }
     if (this.mode === "viewer" && this.currentDocId === null) this._switchMode("home");
     else if (this.mode === "mastery") this._renderMasteryEmpty();
@@ -554,9 +562,9 @@ class RecalApp {
     );
     if (mode === "home")    this._renderHome();
     if (mode === "viewer")  { const doc = this.store.docs.find(d => d.id === this.currentDocId); if (doc) this._renderViewer(doc); }
-    if (mode === "test")    this._initTestPanel();
-    if (mode === "mastery") this._initMasteryPanel();
-    if (mode === "plan")    this._renderPlanSetup();
+    if (mode === "test"    && !this.testState)           this._initTestPanel();
+    if (mode === "mastery" && !this._masteryHasContent)  this._initMasteryPanel();
+    if (mode === "plan"    && !this._planHasContent)     this._renderPlanSetup();
   }
 
   _initTestPanel() {
@@ -702,9 +710,10 @@ class RecalApp {
   _bindTest() {
     $("panel-test").addEventListener("click", e => {
       if (e.target.id === "gen-test-btn")     this._generateTest();
-      if (e.target.id === "restart-test-btn") this._renderTestSetup();
+      if (e.target.id === "restart-test-btn") { this.testState = null; this._renderTestSetup(); }
       if (e.target.id === "next-q-btn")       this._nextQuestion();
       if (e.target.id === "submit-short-btn") this._submitShortAnswer();
+      if (e.target.id === "explain-test-btn") this._explainTestResults();
       if (e.target.classList.contains("mcq-opt")) this._selectMCQ(e.target);
     });
   }
@@ -968,6 +977,11 @@ Return only the JSON.`;
         </div>`;
     }).join("");
 
+    const wrongCount = questions.filter((_, i) => {
+      const a = answers[i] ?? {};
+      return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1;
+    }).length;
+
     $("panel-test").innerHTML = `
       <div class="panel-inner">
         <div class="results-header">
@@ -979,22 +993,70 @@ Return only the JSON.`;
           </div>
         </div>
         <div class="results-breakdown"><h3>Question Breakdown</h3>${breakdown}</div>
+        ${wrongCount > 0 ? `
+        <div class="explain-prompt" id="explain-prompt">
+          <div class="explain-prompt-text">
+            <span class="explain-icon">💡</span>
+            <div>
+              <strong>Want to understand what went wrong?</strong>
+              <p>${wrongCount} question${wrongCount !== 1 ? "s" : ""} missed — get detailed explanations and the concepts you need to solidify.</p>
+            </div>
+          </div>
+          <button id="explain-test-btn" class="btn-primary">Explain Questions &amp; Answers</button>
+        </div>
+        <div id="test-explanation" class="test-explanation hidden"></div>` : ""}
         <div class="results-actions">
-          <button id="restart-test-btn" class="btn-primary">Take Another Test</button>
-          <button id="review-chat-btn" class="btn-secondary">Ask Recal to Explain</button>
+          <button id="restart-test-btn" class="btn-secondary">Take Another Test</button>
         </div>
       </div>`;
+  }
 
-    $("review-chat-btn")?.addEventListener("click", () => {
-      const missed = questions
-        .filter((_, i) => {
-          const a = answers[i] ?? {};
-          return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1;
-        })
-        .map(q => q.topic ?? q.question).join(", ");
-      this._switchMode("chat");
-      $("chat-input").value = `I got these topics wrong on my test: ${missed}. Can you explain them with analogies and concrete examples?`;
+  async _explainTestResults() {
+    const { questions, answers } = this.testState;
+    const wrong = questions.filter((_, i) => {
+      const a = answers[i] ?? {};
+      return a.type === "mcq" ? !a.isRight : (a.selfScore ?? 0) < 1;
     });
+    if (!wrong.length) return;
+
+    const btn = $("explain-test-btn");
+    const box = $("test-explanation");
+    if (!btn || !box) return;
+
+    btn.disabled = true;
+    btn.textContent = "Generating explanations…";
+    box.classList.remove("hidden");
+    box.innerHTML = `<div class="explain-generating"><div class="generating-anim" style="font-size:1.5rem">💡</div><p>Analysing your answers…</p></div>`;
+
+    const lines = wrong.map((q, n) => {
+      const idx = questions.indexOf(q);
+      const a   = answers[idx] ?? {};
+      if (q.type === "mcq") {
+        return `Q${n+1}: ${q.question}\nYour answer: ${a.chosen} | Correct: ${q.correct}\nExplanation hint: ${q.full_explanation ?? q.brief_explanation ?? ""}`;
+      } else {
+        return `Q${n+1}: ${q.question}\nYour answer: ${a.given ?? "(none)"}\nModel answer: ${q.model_answer ?? ""}\nKey points: ${(q.key_points ?? []).join(", ")}`;
+      }
+    }).join("\n\n");
+
+    const prompt = `A student just completed a practice test and got these questions wrong:\n\n${lines}\n\nFor each question:\n1. Clearly explain WHY the correct answer is right\n2. Identify the core concept being tested\n3. Give a memorable tip or analogy to remember it\n\nBe concise, educational, and encouraging. Use markdown headers for each question.`;
+
+    this._setGenerating(true);
+    let full = "";
+    try {
+      await streamChat(
+        { messages: [{ role: "user", content: prompt }], mode: "chat" },
+        delta => {
+          full += delta;
+          box.innerHTML = `<div class="explain-output">${md(full)}</div>`;
+        }
+      );
+      $("explain-prompt")?.classList.add("hidden");
+    } catch (err) {
+      box.innerHTML = `<p class="err-msg">⚠️ ${err.message}</p>`;
+    } finally {
+      this._setGenerating(false);
+      btn.disabled = false;
+    }
   }
 
   // ── Study Plan ────────────────────────────────────────────────────────────────
@@ -1009,6 +1071,7 @@ Return only the JSON.`;
   }
 
   _renderPlanSetup() {
+    this._planHasContent = false;
     if (!this.store.hasContent) {
       $("panel-plan").innerHTML = `
         <div class="panel-inner center-content">
@@ -1075,6 +1138,7 @@ Return only the JSON.`;
 
   async _generatePlan() {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    this._planHasContent = true;
     this._setGenerating(true);
 
     const dateVal = $("plan-date")?.value;
@@ -1223,6 +1287,7 @@ No prose paragraphs — tables and bullets only.`;
 
   _renderMastery() {
     if (!this.topicsData?.length) return;
+    this._masteryHasContent = true;
 
     const extractedTopics = this.topicsData.map(t => t.name);
     const allTopics = [
