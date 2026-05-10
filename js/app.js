@@ -105,14 +105,6 @@ async function generate({ messages, mode, temperature = 0.3 }) {
   return full;
 }
 
-// ─── Welcome HTML (chat new-chat reset) ──────────────────────────────────────
-
-const WELCOME_HTML = `
-  <div class="welcome">
-    <div class="welcome-logo">🎓</div>
-    <h2>Welcome to Recal!</h2>
-    <p>Ask me anything about your materials — I'll explain concepts with analogies and examples.</p>
-  </div>`;
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -200,7 +192,7 @@ class RecalApp {
   _newChat() {
     this.history = [];
     this._setGenerating(false);
-    $("chat-messages").innerHTML = WELCOME_HTML;
+    $("chat-messages").innerHTML = "";
     $("chat-input").value = "";
     $("chat-input").style.height = "auto";
     this._switchMode("home");
@@ -264,8 +256,8 @@ class RecalApp {
       this._finaliseDocItem(item, id, file.name, file.size);
       this._toast(`Added: ${file.name}`, "success");
       this.topicsData = null;
-      if (this.mode === "mastery") this._renderMasteryEmpty();
       this._renderHome();
+      this._openViewer(id);
     } catch (err) {
       item.dataset.state = "error";
       item.querySelector(".doc-status").textContent = "❌ Failed";
