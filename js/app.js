@@ -530,26 +530,15 @@ class RecalApp {
   }
 
   _renderViewer(doc) {
-    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-
-    const hasPages = /\[Page\s+\d+\]/.test(doc.text);
+    const ext = doc.name.split(".").pop().toLowerCase();
     let innerHtml;
 
-    if (hasPages) {
-      const parts = doc.text.split(/\[Page\s+\d+\]/);
-      const nums  = [...doc.text.matchAll(/\[Page\s+(\d+)\]/g)].map(m => m[1]);
-      innerHtml = parts.map((chunk, i) => {
-        if (!chunk.trim()) return "";
-        const paras = chunk.split(/\n+/).filter(l => l.trim())
-          .map(l => `<p>${esc(l)}</p>`).join("");
-        const divider = nums[i]
-          ? `<div class="viewer-page-divider">Page ${nums[i]}</div>`
-          : "";
-        return divider + paras;
-      }).join("");
+    if (ext === "md" || ext === "markdown") {
+      innerHtml = `<div class="viewer-markdown">${md(doc.text)}</div>`;
+    } else if (/\[Page\s+\d+\]/.test(doc.text)) {
+      innerHtml = this._renderPDFPages(doc.text);
     } else {
-      innerHtml = doc.text.split(/\n{2,}/).filter(p => p.trim())
-        .map(p => `<p>${esc(p).replace(/\n/g,"<br>")}</p>`).join("");
+      innerHtml = this._renderTextContent(doc.text);
     }
 
     $("panel-viewer").innerHTML = `
@@ -562,6 +551,59 @@ class RecalApp {
           <div class="viewer-doc-canvas"><div class="viewer-page">${innerHtml}</div></div>
         </div>
       </div>`;
+  }
+
+  _cleanText(raw) {
+    return raw
+      .replace(/(\w)-\n(\w)/g, "$1$2")              // rejoin PDF soft-hyphen breaks
+      .replace(/([^.!?:;\n])\n([a-z("])/g, "$1 $2") // join continuation lines
+      .replace(/\n{3,}/g, "\n\n")                    // collapse excess blank lines
+      .split("\n").map(l => l.trimEnd()).join("\n")
+      .trim();
+  }
+
+  _renderTextContent(raw) {
+    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const text = this._cleanText(raw);
+    return text.split(/\n{2,}/).map(block => {
+      const trimmed = block.trim();
+      if (!trimmed) return "";
+
+      const lines = trimmed.split("\n");
+
+      // Detect list blocks: every non-empty line starts with a bullet or number
+      const listPat = /^\s*([-•*]|\d+[.)]) /;
+      if (lines.length > 1 && lines.filter(l => l.trim()).every(l => listPat.test(l))) {
+        const items = lines.filter(l => l.trim())
+          .map(l => `<li>${esc(l.replace(/^\s*([-•*]|\d+[.)]+)\s*/, "").trim())}</li>`)
+          .join("");
+        return `<ul class="viewer-list">${items}</ul>`;
+      }
+
+      // Detect headings: single short line, no trailing sentence punctuation
+      if (lines.length === 1 && trimmed.length > 3 && trimmed.length < 90 && !/[.?!;,]$/.test(trimmed)) {
+        const words = trimmed.split(/\s+/).length;
+        const isAllCaps = trimmed === trimmed.toUpperCase() && /[A-Z]{2}/.test(trimmed);
+        if (isAllCaps && words <= 12) return `<h2 class="viewer-h2">${esc(trimmed)}</h2>`;
+        if (/^[A-Z0-9]/.test(trimmed) && words <= 8) return `<h3 class="viewer-h3">${esc(trimmed)}</h3>`;
+      }
+
+      return `<p>${esc(lines.join(" "))}</p>`;
+    }).filter(Boolean).join("");
+  }
+
+  _renderPDFPages(text) {
+    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const parts = text.split(/\[Page\s+\d+\]/);
+    const nums  = [...text.matchAll(/\[Page\s+(\d+)\]/g)].map(m => m[1]);
+    return parts.map((chunk, i) => {
+      if (!chunk.trim()) return "";
+      const cleaned = this._cleanText(chunk);
+      const paras = cleaned.split(/\n{2,}/).filter(l => l.trim())
+        .map(p => `<p>${esc(p.replace(/\n/g, " "))}</p>`).join("");
+      const divider = nums[i] ? `<div class="viewer-page-divider">Page ${nums[i]}</div>` : "";
+      return divider + paras;
+    }).join("");
   }
 
   _quickAction(action) {
@@ -1290,7 +1332,7 @@ No prose paragraphs — tables and bullets only.`;
     this._topicsLoading = true;
     this._renderMasteryEmpty();
 
-    const docCtx  = this.store.getStructuredOverview(3000);
+    const docCtx  = this.store.getStructuredOverview(6000);
     const userMsg = `Extract a topic map from these study materials.\n\nMaterials:\n${docCtx}\n\nReturn only JSON.`;
 
     try {

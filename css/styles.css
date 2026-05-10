@@ -1099,6 +1099,33 @@ header {
 }
 .viewer-page-divider:first-child { margin-top: 0; border-top: none; padding-top: 0; }
 
+/* ── Viewer: Markdown rendering (.md / .markdown files) ─────────────────────── */
+.viewer-markdown h1 { font-size: 1.45rem; font-weight: 700; margin: 1.4rem 0 .7rem; color: var(--txt); border-bottom: 2px solid var(--border); padding-bottom: .35rem; }
+.viewer-markdown h2 { font-size: 1.2rem;  font-weight: 700; margin: 1.2rem 0 .55rem; color: var(--txt); }
+.viewer-markdown h3 { font-size: 1.02rem; font-weight: 600; margin: 1rem 0 .45rem;  color: var(--clr-primary); }
+.viewer-markdown h4 { font-size: .93rem;  font-weight: 600; margin: .8rem 0 .4rem;  color: var(--txt-2); }
+.viewer-markdown p  { margin-bottom: .7rem; line-height: 1.75; color: var(--txt-2); }
+.viewer-markdown ul, .viewer-markdown ol { padding-left: 1.5rem; margin-bottom: .7rem; }
+.viewer-markdown li { margin-bottom: .3rem; line-height: 1.65; color: var(--txt-2); }
+.viewer-markdown strong { font-weight: 600; color: var(--txt); }
+.viewer-markdown em    { font-style: italic; }
+.viewer-markdown code  { font-family: var(--font-mono); font-size: .84rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+.viewer-markdown pre   { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; overflow-x: auto; margin-bottom: .7rem; }
+.viewer-markdown pre code { background: none; border: none; padding: 0; font-size: .82rem; }
+.viewer-markdown blockquote { border-left: 3px solid var(--clr-primary); padding: 8px 16px; margin: .7rem 0; background: var(--clr-primary-lt); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--txt-2); }
+.viewer-markdown table { width: 100%; border-collapse: collapse; margin-bottom: .7rem; font-size: .88rem; }
+.viewer-markdown th { background: var(--bg); font-weight: 600; padding: 7px 12px; border: 1px solid var(--border); text-align: left; color: var(--txt); }
+.viewer-markdown td { padding: 6px 12px; border: 1px solid var(--border); color: var(--txt-2); }
+.viewer-markdown tr:nth-child(even) td { background: var(--bg); }
+.viewer-markdown hr { border: none; border-top: 1px solid var(--border); margin: 1.4rem 0; }
+.viewer-markdown a  { color: var(--clr-primary); text-decoration: underline; }
+
+/* ── Viewer: heuristic headings & lists (PDF / plain text) ──────────────────── */
+.viewer-h2 { font-size: 1.08rem; font-weight: 700; color: var(--txt); margin: 1.3rem 0 .45rem; letter-spacing: .02em; }
+.viewer-h3 { font-size: .97rem;  font-weight: 600; color: var(--clr-primary); margin: 1rem 0 .4rem; }
+.viewer-list { padding-left: 1.4rem; margin-bottom: .6rem; }
+.viewer-list li { margin-bottom: .25rem; color: var(--txt-2); line-height: 1.65; }
+
 /* Right: notes panel */
 .viewer-notes {
   flex: 0 0 260px; display: flex; flex-direction: column;

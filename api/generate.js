@@ -94,7 +94,7 @@ export default async function handler(req) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const maxTokens    = mode === "topics" ? 1500 : 4096;
+        const maxTokens    = mode === "topics" ? 3000 : 4096;
         const claudeStream = anthropic.messages.stream({
           model, max_tokens: maxTokens, temperature, system, messages,
         });
