@@ -862,8 +862,8 @@ header {
 
   /* Viewer */
   .viewer-layout { flex-direction: column; }
-  .viewer-doc { flex: 1; border-right: none; border-bottom: 1px solid var(--border); }
-  .viewer-doc-body { padding: 20px 16px; }
+  .viewer-doc { border-right: none; border-bottom: 1px solid var(--border); }
+  .viewer-doc-body { padding: 16px; }
   .viewer-notes { flex: 0 0 180px; }
 }
 
@@ -990,10 +990,10 @@ header {
 
 /* ── Document Viewer ─────────────────────────────────────────────────────────── */
 .viewer-layout {
-  display: flex; height: 100%; overflow: hidden;
+  display: flex; flex: 1; overflow: hidden; min-height: 0;
 }
 .viewer-doc {
-  flex: 3; overflow-y: auto;
+  flex: 1; overflow-y: auto; min-width: 0;
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
 }
@@ -1011,14 +1011,14 @@ header {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .viewer-doc-body {
-  padding: 32px 48px;
+  padding: 28px 40px;
   font-size: .93rem; line-height: 1.85;
-  color: var(--txt); max-width: 72ch;
+  color: var(--txt);
 }
 .viewer-doc-body p { margin-bottom: .9em; }
 .viewer-notes {
-  flex: 0 0 280px; display: flex; flex-direction: column;
-  background: var(--bg);
+  flex: 0 0 260px; display: flex; flex-direction: column;
+  background: var(--bg); min-height: 0;
 }
 .viewer-notes-header {
   padding: 12px 16px;
