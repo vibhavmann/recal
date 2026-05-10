@@ -859,6 +859,12 @@ header {
   .home-wrap { padding: 24px 16px; }
   .home-start-grid { grid-template-columns: 1fr; }
   .home-start-btn.primary { grid-column: auto; }
+
+  /* Viewer */
+  .viewer-layout { flex-direction: column; }
+  .viewer-doc { flex: 1; border-right: none; border-bottom: 1px solid var(--border); }
+  .viewer-doc-body { padding: 20px 16px; }
+  .viewer-notes { flex: 0 0 180px; }
 }
 
 /* ── Home Panel ──────────────────────────────────────────────────────────────── */
@@ -976,6 +982,128 @@ header {
 
 /* Brand logo acts as home link */
 .brand-sm { cursor: pointer; }
+
+/* Sidebar doc item — clickable */
+.doc-item-clickable { cursor: pointer; }
+.doc-item-clickable:hover { background: var(--bg); }
+.doc-item-clickable:hover .doc-name { color: var(--clr-primary); }
+
+/* ── Document Viewer ─────────────────────────────────────────────────────────── */
+.viewer-layout {
+  display: flex; height: 100%; overflow: hidden;
+}
+.viewer-doc {
+  flex: 3; overflow-y: auto;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.viewer-doc-header {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; font-size: .9rem;
+  flex-shrink: 0;
+}
+.viewer-doc-name {
+  color: var(--txt); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.viewer-doc-body {
+  padding: 32px 48px;
+  font-size: .93rem; line-height: 1.85;
+  color: var(--txt); max-width: 72ch;
+}
+.viewer-doc-body p { margin-bottom: .9em; }
+.viewer-notes {
+  flex: 0 0 280px; display: flex; flex-direction: column;
+  background: var(--bg);
+}
+.viewer-notes-header {
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700; font-size: .75rem;
+  color: var(--txt-3); text-transform: uppercase; letter-spacing: .07em;
+  flex-shrink: 0;
+}
+.viewer-notes-area {
+  flex: 1; border: none; outline: none; resize: none;
+  padding: 16px; font-family: inherit; font-size: .88rem;
+  line-height: 1.7; background: transparent; color: var(--txt);
+}
+
+/* ── Mastery Confidence ───────────────────────────────────────────────────────── */
+.mastery-add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.mastery-add-row input { flex: 1; }
+.mastery-list { display: flex; flex-direction: column; gap: 8px; }
+.mastery-row {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.mastery-row-content {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; flex-wrap: wrap;
+}
+.mastery-row-name {
+  flex: 1; font-weight: 600; font-size: .9rem; min-width: 120px;
+}
+.custom-badge {
+  font-size: .62rem; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--bg); color: var(--txt-3);
+  border: 1px solid var(--border);
+  vertical-align: middle; margin-left: 4px;
+}
+.confidence-selector { display: flex; gap: 4px; flex-wrap: wrap; }
+.conf-btn {
+  padding: 4px 12px; border-radius: 99px;
+  border: 1.5px solid var(--border);
+  font-size: .75rem; font-weight: 600;
+  background: transparent; color: var(--txt-2);
+  cursor: pointer; transition: all var(--transition);
+}
+.conf-btn:hover { border-color: var(--clr-primary); color: var(--clr-primary); }
+.conf-btn.active-none { background: var(--bg); border-color: var(--txt-3); color: var(--txt-3); }
+.conf-btn.active-low { background: var(--clr-error); border-color: var(--clr-error); color: #fff; }
+.conf-btn.active-medium { background: var(--clr-warning); border-color: var(--clr-warning); color: #fff; }
+.conf-btn.active-high { background: var(--clr-success); border-color: var(--clr-success); color: #fff; }
+.mastery-suggestion {
+  padding: 10px 18px;
+  background: var(--clr-primary-lt);
+  border-top: 1px solid var(--border);
+  font-size: .82rem; color: var(--txt-2);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap; line-height: 1.8;
+}
+.mastery-suggestion button {
+  color: var(--clr-primary); font-weight: 600;
+  background: none; border: none; cursor: pointer;
+  font-size: inherit; text-decoration: underline; padding: 0;
+}
+
+/* ── Topic Checklist (Study Plan) ────────────────────────────────────────────── */
+.topic-checklist {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 220px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px; background: var(--bg-card);
+}
+.topic-check-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 4px;
+  font-size: .88rem; cursor: pointer; user-select: none;
+}
+.topic-check-item:hover { background: var(--bg); }
+.topic-check-item input[type="checkbox"] { margin: 0; cursor: pointer; flex-shrink: 0; }
+.form-hint { font-size: .75rem; color: var(--txt-3); font-weight: 400; }
+
+/* ── Home doc row clickable hint ─────────────────────────────────────────────── */
+.home-doc-row-open { cursor: pointer; transition: background var(--transition); }
+.home-doc-row-open:hover { background: var(--bg); }
+.home-doc-row-open:hover .home-doc-name { color: var(--clr-primary); }
 
 /* Very small phones */
 @media (max-width: 380px) {

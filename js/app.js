@@ -126,6 +126,9 @@ class RecalApp {
     this.topicsData     = null;
     this.testState      = null;
     this.masteryScores  = {};
+    this.confidenceData = {};
+    this.customTopics   = [];
+    this.currentDocId   = null;
 
     this._initUser();
     this._bindTheme();
@@ -137,9 +140,6 @@ class RecalApp {
     this._bindTest();
     this._bindPlan();
     this._renderHome();
-    this._renderTestSetup();
-    this._renderPlanSetup();
-    this._renderMasteryEmpty();
 
     document.querySelector(".brand-sm")
       ?.addEventListener("click", () => this._switchMode("home"));
@@ -156,14 +156,18 @@ class RecalApp {
       localStorage.setItem("cb-user-id", id);
     }
     this.userId = id;
-    try {
-      const saved = localStorage.getItem(`cb-mastery-${id}`);
-      if (saved) this.masteryScores = JSON.parse(saved);
-    } catch {}
+    try { const s = localStorage.getItem(`cb-mastery-${id}`);      if (s) this.masteryScores  = JSON.parse(s); } catch {}
+    try { const s = localStorage.getItem(`cb-confidence-${id}`);   if (s) this.confidenceData = JSON.parse(s); } catch {}
+    try { const s = localStorage.getItem(`cb-custom-topics-${id}`);if (s) this.customTopics   = JSON.parse(s); } catch {}
   }
 
   _saveMastery() {
     localStorage.setItem(`cb-mastery-${this.userId}`, JSON.stringify(this.masteryScores));
+  }
+
+  _saveConfidence() {
+    localStorage.setItem(`cb-confidence-${this.userId}`,    JSON.stringify(this.confidenceData));
+    localStorage.setItem(`cb-custom-topics-${this.userId}`, JSON.stringify(this.customTopics));
   }
 
   // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -292,7 +296,9 @@ class RecalApp {
     item.querySelector(".doc-status").textContent = fmtSize(size);
     const btn = item.querySelector(".doc-remove");
     btn.classList.remove("hidden");
-    btn.addEventListener("click", () => this._removeDoc(id, item));
+    btn.addEventListener("click", e => { e.stopPropagation(); this._removeDoc(id, item); });
+    item.classList.add("doc-item-clickable");
+    item.addEventListener("click", () => this._openViewer(id));
   }
 
   _removeDoc(id, sidebarItem) {
@@ -306,7 +312,8 @@ class RecalApp {
         </div>`;
     }
     this.topicsData = null;
-    if (this.mode === "mastery") this._renderMasteryEmpty();
+    if (this.mode === "viewer" && this.currentDocId === id) this._switchMode("home");
+    else if (this.mode === "mastery") this._renderMasteryEmpty();
     this._renderHome();
   }
 
@@ -330,7 +337,7 @@ class RecalApp {
         </div>`;
     } else {
       const docRows = docs.map(d => `
-        <div class="home-doc-row">
+        <div class="home-doc-row home-doc-row-open" data-id="${d.id}">
           <span class="home-doc-badge">${ext(d.name)}</span>
           <span class="home-doc-name">${d.name}</span>
           <span class="home-doc-meta">${fmtSize(d.size)}</span>
@@ -399,11 +406,57 @@ class RecalApp {
       })
     );
     panel.querySelectorAll(".home-doc-remove").forEach(btn =>
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
         const id          = parseInt(btn.dataset.id);
         const sidebarItem = $("doc-list").querySelector(`[data-docid="${id}"]`);
         this._removeDoc(id, sidebarItem);
       })
+    );
+    panel.querySelectorAll(".home-doc-row-open").forEach(row =>
+      row.addEventListener("click", () => this._openViewer(parseInt(row.dataset.id)))
+    );
+  }
+
+  // ── Document Viewer ───────────────────────────────────────────────────────────
+
+  _openViewer(docId) {
+    const doc = this.store.docs.find(d => d.id === docId);
+    if (!doc) return;
+    this.currentDocId = docId;
+    this._switchMode("viewer");
+  }
+
+  _renderViewer(doc) {
+    const notesKey   = `recal-notes-${doc.name}:${doc.size}`;
+    const savedNotes = localStorage.getItem(notesKey) ?? "";
+
+    const formatted = doc.text
+      .split(/\n{2,}/)
+      .filter(p => p.trim())
+      .map(p => `<p>${p
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>")}</p>`)
+      .join("");
+
+    $("panel-viewer").innerHTML = `
+      <div class="viewer-layout">
+        <div class="viewer-doc">
+          <div class="viewer-doc-header">
+            <span>${doc.name.endsWith(".pdf") ? "📄" : "📝"}</span>
+            <span class="viewer-doc-name">${doc.name}</span>
+          </div>
+          <div class="viewer-doc-body">${formatted}</div>
+        </div>
+        <div class="viewer-notes">
+          <div class="viewer-notes-header">📝 Notes</div>
+          <textarea class="viewer-notes-area" id="viewer-notes-ta"
+            placeholder="Write your notes here…" spellcheck="true">${savedNotes}</textarea>
+        </div>
+      </div>`;
+
+    $("viewer-notes-ta")?.addEventListener("input", e =>
+      localStorage.setItem(notesKey, e.target.value)
     );
   }
 
@@ -435,11 +488,51 @@ class RecalApp {
     document.querySelectorAll(".panel").forEach(p =>
       p.classList.toggle("active", p.id === `panel-${mode}`)
     );
-    if (mode === "mastery") {
-      if (this.topicsData) this._renderMastery();
-      else if (this.store.hasContent) this._extractMastery();
+    if (mode === "home")    this._renderHome();
+    if (mode === "viewer")  { const doc = this.store.docs.find(d => d.id === this.currentDocId); if (doc) this._renderViewer(doc); }
+    if (mode === "test")    this._initTestPanel();
+    if (mode === "mastery") this._initMasteryPanel();
+    if (mode === "plan")    this._renderPlanSetup();
+  }
+
+  _initTestPanel() {
+    if (!this.store.hasContent) {
+      $("panel-test").innerHTML = `
+        <div class="panel-inner center-content">
+          <div style="font-size:2.5rem">🎯</div>
+          <h3>No Materials Yet</h3>
+          <p class="muted">Upload study materials to generate a practice test.</p>
+        </div>`;
+      return;
     }
-    if (mode === "home") this._renderHome();
+    if (this.topicsData) { this._renderTestSetup(); return; }
+    $("panel-test").innerHTML = `
+      <div class="panel-inner center-content">
+        <div class="generating-anim">🎯</div>
+        <h3>Extracting topics…</h3>
+        <div class="spinner-bar"><div class="spinner-fill"></div></div>
+      </div>`;
+    this._extractMastery().then(() => { if (this.mode === "test") this._renderTestSetup(); });
+  }
+
+  _initMasteryPanel() {
+    if (!this.store.hasContent) {
+      $("panel-mastery").innerHTML = `
+        <div class="panel-inner center-content">
+          <div style="font-size:3rem">📊</div>
+          <h3>No Materials Yet</h3>
+          <p class="muted">Upload study materials to start tracking mastery.</p>
+        </div>`;
+      return;
+    }
+    if (this.topicsData) { this._renderMastery(); return; }
+    $("panel-mastery").innerHTML = `
+      <div class="panel-inner center-content">
+        <div class="generating-anim">📊</div>
+        <h3>Extracting topics…</h3>
+        <div class="spinner-bar"><div class="spinner-fill"></div></div>
+      </div>`;
+    this._extractMastery().then(() => { if (this.mode === "mastery" && this.topicsData) this._renderMastery(); });
   }
 
   // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -546,30 +639,33 @@ class RecalApp {
 
   _renderTestSetup() {
     this.testState = null;
-    // Build weak-topic hint from mastery scores
-    const weakHint = Object.entries(this.masteryScores)
-      .filter(([, v]) => v.pct < 0.6)
-      .map(([topic]) => topic)
-      .join(", ");
+    const topics = this.topicsData ?? [];
+    const topicOpts = topics.length
+      ? [`<option value="">All topics</option>`,
+         ...topics.map(t => `<option value="${t.name}">${t.name}</option>`),
+         `<option value="__other__">Other (type manually)</option>`].join("")
+      : `<option value="">All topics</option><option value="__other__">Other (type manually)</option>`;
 
     $("panel-test").innerHTML = `
       <div class="panel-inner">
         <div class="panel-header">
           <h2>🎯 Adaptive Practice Test</h2>
-          <p>Tests adapt to your level and focus on areas where you need the most practice.</p>
+          <p>Select a topic and let Claude generate questions tailored to your materials.</p>
         </div>
         <div class="form-card">
           <div class="form-row">
             <div class="form-group">
-              <label>Topic / Focus Area</label>
-              <input id="test-topic" type="text"
-                value="${weakHint}"
-                placeholder="e.g. Chapter 3, Photosynthesis — or leave blank for all topics">
+              <label>Topic</label>
+              <select id="test-topic-select">${topicOpts}</select>
             </div>
+          </div>
+          <div class="form-group hidden" id="test-topic-custom-wrap">
+            <label>Custom topic</label>
+            <input id="test-topic-custom" type="text" placeholder="e.g. Chapter 3, Photosynthesis…">
           </div>
           <div class="form-row three-col">
             <div class="form-group">
-              <label>Number of Questions</label>
+              <label>Questions</label>
               <select id="test-count">
                 <option value="5">5 questions</option>
                 <option value="8">8 questions</option>
@@ -579,30 +675,37 @@ class RecalApp {
             <div class="form-group">
               <label>Difficulty</label>
               <select id="test-diff">
-                <option value="mixed" selected>Mixed levels</option>
-                <option value="easy">Easy — Recall</option>
-                <option value="medium">Medium — Application</option>
-                <option value="hard">Hard — Analysis</option>
+                <option value="mixed" selected>Mixed</option>
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
               </select>
             </div>
             <div class="form-group">
-              <label>Question Types</label>
+              <label>Question type</label>
               <select id="test-types">
                 <option value="mixed" selected>Both types</option>
-                <option value="mcq">Multiple Choice only</option>
-                <option value="short">Short Answer only</option>
+                <option value="mcq">Multiple choice</option>
+                <option value="short">Short answer</option>
               </select>
             </div>
           </div>
-          <button id="gen-test-btn" class="btn-primary">Generate Adaptive Test</button>
+          <button id="gen-test-btn" class="btn-primary">Generate Test</button>
         </div>
       </div>`;
+
+    $("test-topic-select")?.addEventListener("change", e =>
+      $("test-topic-custom-wrap")?.classList.toggle("hidden", e.target.value !== "__other__")
+    );
   }
 
   async _generateTest() {
     if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
 
-    const topic  = $("test-topic")?.value.trim() ?? "";
+    const selVal = $("test-topic-select")?.value ?? "";
+    const topic  = selVal === "__other__"
+      ? ($("test-topic-custom")?.value.trim() ?? "")
+      : selVal;
     const count  = $("test-count")?.value ?? "10";
     const diff   = $("test-diff")?.value  ?? "mixed";
     const types  = $("test-types")?.value ?? "mixed";
@@ -832,21 +935,43 @@ Return only the JSON.`;
   }
 
   _renderPlanSetup() {
-    const today = new Date().toISOString().split("T")[0];
+    if (!this.store.hasContent) {
+      $("panel-plan").innerHTML = `
+        <div class="panel-inner center-content">
+          <div style="font-size:3rem">📅</div>
+          <h3>No Materials Yet</h3>
+          <p class="muted">Upload study materials to build a study plan.</p>
+        </div>`;
+      return;
+    }
+
+    const today   = new Date().toISOString().split("T")[0];
+    const topics  = [...(this.topicsData ?? []).map(t => t.name), ...this.customTopics];
+    const topicsSection = topics.length ? `
+      <div class="form-group">
+        <label>Topics to cover <span class="form-hint">— uncheck topics you want to skip</span></label>
+        <div class="topic-checklist">
+          ${topics.map(n => `
+            <label class="topic-check-item">
+              <input type="checkbox" value="${n}" checked> ${n}
+            </label>`).join("")}
+        </div>
+      </div>` : "";
+
     $("panel-plan").innerHTML = `
       <div class="panel-inner">
         <div class="panel-header">
           <h2>📅 Study Plan</h2>
-          <p>Get a personalised, adaptive schedule. Recal factors in your test performance to focus on weak areas.</p>
+          <p>Set your goal date, select topics, add context — Claude generates your personalised plan.</p>
         </div>
         <div class="form-card">
           <div class="form-row">
             <div class="form-group">
-              <label>Exam / Goal Date</label>
+              <label>Target completion date</label>
               <input id="plan-date" type="date" min="${today}">
             </div>
             <div class="form-group">
-              <label>Daily Study Hours</label>
+              <label>Daily study time</label>
               <select id="plan-hours">
                 <option value="1">1 hour / day</option>
                 <option value="2" selected>2 hours / day</option>
@@ -855,11 +980,13 @@ Return only the JSON.`;
               </select>
             </div>
           </div>
+          ${topicsSection}
           <div class="form-group">
-            <label>Additional notes (optional)</label>
-            <textarea id="plan-focus" rows="3" placeholder="e.g. I struggle with topic X but understand Y well…"></textarea>
+            <label>Additional context <span class="form-hint">— optional</span></label>
+            <textarea id="plan-focus" rows="3"
+              placeholder="e.g. I study best in the morning · weakest on Topic X · exams on Mon / Wed…"></textarea>
           </div>
-          <button id="gen-plan-btn" class="btn-primary">Build My Study Plan</button>
+          <button id="gen-plan-btn" class="btn-primary">Generate Study Plan</button>
         </div>
       </div>`;
   }
@@ -875,6 +1002,12 @@ Return only the JSON.`;
     const target  = dateVal ? new Date(dateVal) : null;
     const days    = target ? Math.ceil((target - today) / 86400000) : null;
 
+    // Read selected topics from checklist (if available)
+    const checked = [...document.querySelectorAll(".topic-check-item input:checked")];
+    const selectedTopics = checked.length
+      ? checked.map(cb => cb.value)
+      : [...(this.topicsData ?? []).map(t => t.name), ...this.customTopics];
+
     const panel = $("panel-plan");
     panel.innerHTML = `
       <div class="panel-inner center-content">
@@ -883,22 +1016,15 @@ Return only the JSON.`;
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
 
-    const topicContext = this.topicsData
-      ? this.topicsData.map(t => {
-          const subs = t.subtopics?.length ? ` (${t.subtopics.slice(0, 4).join(", ")})` : "";
-          return `• ${t.name}${subs}`;
+    const topicContext = selectedTopics.length
+      ? selectedTopics.map(n => {
+          const td   = this.topicsData?.find(t => t.name === n);
+          const subs = td?.subtopics?.length ? ` (${td.subtopics.slice(0, 4).join(", ")})` : "";
+          const conf = this.confidenceData[n];
+          const confNote = conf && conf !== "none" ? ` [confidence: ${conf}]` : "";
+          return `• ${n}${subs}${confNote}`;
         }).join("\n")
       : this.store.getTopicNamesOverview();
-
-    // Include mastery performance data
-    const weakAreas = Object.entries(this.masteryScores)
-      .filter(([, v]) => v.pct < 0.6)
-      .map(([topic, v]) => `${topic} (${Math.round(v.pct * 100)}%)`)
-      .join(", ");
-    const strongAreas = Object.entries(this.masteryScores)
-      .filter(([, v]) => v.pct >= 0.8)
-      .map(([topic]) => topic)
-      .join(", ");
 
     const userMsg = `Create a concise adaptive study plan in tabular format.
 
@@ -906,14 +1032,12 @@ Student details:
 - ${days ? `Days until exam: ${days} (target: ${dateVal})` : "No specific deadline"}
 - Daily study time: ${hours} hour(s)
 ${focus ? `- Notes: ${focus}` : ""}
-${weakAreas ? `- Weak areas needing more focus: ${weakAreas}` : ""}
-${strongAreas ? `- Strong areas (less time needed): ${strongAreas}` : ""}
 
-Topics to cover:
+Topics to cover (with confidence levels where known):
 ${topicContext}
 
 Output:
-1. A markdown table: Day | Topics | Activity | Duration — weight weak areas more heavily
+1. A markdown table: Day | Topics | Activity | Duration — prioritise low-confidence topics
 2. A spaced repetition schedule table showing revisit days
 3. 3-4 bullet tips
 No prose paragraphs — tables and bullets only.`;
@@ -952,14 +1076,14 @@ No prose paragraphs — tables and bullets only.`;
   // ── Mastery Tracking ──────────────────────────────────────────────────────────
 
   _renderMasteryEmpty() {
-    $("panel-mastery").innerHTML = `
-      <div class="panel-inner center-content">
-        <div style="font-size:3rem">📊</div>
-        <h3>${this.store.hasContent ? "Analysing materials…" : "No Materials Yet"}</h3>
-        <p class="muted">${this.store.hasContent
-          ? "Extracting your topic map. Takes about 10–20 seconds."
-          : "Upload study materials to see your mastery breakdown."}</p>
-      </div>`;
+    if (!this.store.hasContent) {
+      $("panel-mastery").innerHTML = `
+        <div class="panel-inner center-content">
+          <div style="font-size:3rem">📊</div>
+          <h3>No Materials Yet</h3>
+          <p class="muted">Upload study materials to start tracking mastery.</p>
+        </div>`;
+    }
   }
 
   _docFingerprint() {
@@ -1016,66 +1140,94 @@ No prose paragraphs — tables and bullets only.`;
   }
 
   _renderMastery() {
-    const impColor = { high: "var(--clr-error)", medium: "var(--clr-warning)", low: "var(--clr-success)" };
+    if (!this.topicsData?.length) return;
 
-    const cards = this.topicsData.map((t, i) => {
-      const ms  = this.masteryScores[t.name];
-      const pct = ms ? Math.round(ms.pct * 100) : null;
-      const masteryBar = pct !== null
-        ? `<div class="mastery-bar-wrap">
-            <div class="mastery-bar">
-              <div class="mastery-fill" style="width:${pct}%;background:${pct >= 80 ? "var(--clr-success)" : pct >= 50 ? "var(--clr-warning)" : "var(--clr-error)"}"></div>
-            </div>
-            <span class="mastery-pct">${pct}% mastery</span>
-           </div>`
-        : "";
+    const extractedTopics = this.topicsData.map(t => t.name);
+    const allTopics = [
+      ...extractedTopics,
+      ...this.customTopics.filter(n => !extractedTopics.includes(n)),
+    ];
 
-      const subtopics = (t.subtopics ?? []).map(s => {
-        const sid = `st-${i}-${s.replace(/\W/g, "-")}`;
-        return `
-          <div class="subtopic">
-            <input type="checkbox" id="${sid}" class="subtopic-check">
-            <label for="${sid}">${s}</label>
-          </div>`;
-      }).join("");
+    const LEVELS = ["none", "low", "medium", "high"];
+    const LABELS = { none: "Not started", low: "Low", medium: "Medium", high: "High" };
 
-      const prereqs = (t.prerequisites ?? []).length
-        ? `<div class="topic-prereqs">📋 Prereqs: ${t.prerequisites.join(", ")}</div>` : "";
-
+    const rows = allTopics.map(name => {
+      const level   = this.confidenceData[name] ?? "none";
+      const isCustom = this.customTopics.includes(name) && !extractedTopics.includes(name);
+      const btns = LEVELS.map(l =>
+        `<button class="conf-btn${level === l ? ` active-${l}` : ""}" data-topic="${name}" data-level="${l}">${LABELS[l]}</button>`
+      ).join("");
+      const suggestion = level === "low" ? `
+        <div class="mastery-suggestion">
+          💡 Confidence is low —
+          <button class="ms-chat" data-topic="${name}">Ask Chat to explain</button> ·
+          <button class="ms-test" data-topic="${name}">Take a practice test</button> ·
+          <button class="ms-plan" data-topic="${name}">Create a study plan</button>
+        </div>` : "";
       return `
-        <div class="topic-card">
-          <div class="topic-header">
-            <div class="topic-dot" style="background:${impColor[t.importance] ?? "var(--clr-primary)"}"></div>
-            <h3 class="topic-name">${t.name}</h3>
-            <span class="badge badge-diff-${t.importance}">${t.importance} priority</span>
-            <button class="topic-study-btn" data-topic="${t.name}" title="Explain this topic">💬</button>
+        <div class="mastery-row">
+          <div class="mastery-row-content">
+            <div class="mastery-row-name">${name}${isCustom ? ' <span class="custom-badge">custom</span>' : ""}</div>
+            <div class="confidence-selector">${btns}</div>
           </div>
-          ${masteryBar}
-          ${t.summary ? `<p class="topic-summary">${t.summary}</p>` : ""}
-          ${prereqs}
-          ${subtopics ? `<div class="subtopics">${subtopics}</div>` : ""}
+          ${suggestion}
         </div>`;
     }).join("");
 
     $("panel-mastery").innerHTML = `
       <div class="panel-inner">
         <div class="panel-header">
-          <h2>📊 Mastery Tracker</h2>
-          <p>${this.topicsData.length} topics found. Tick subtopics as you master them. Test scores update the mastery bars automatically.</p>
+          <h2>📊 Mastery</h2>
+          <p>Rate your confidence per topic. Low confidence topics will prompt next steps.</p>
         </div>
-        <div class="topics-grid">${cards}</div>
+        <div class="mastery-add-row">
+          <input id="mastery-add-input" type="text" placeholder="Add a topic not in the list…">
+          <button id="mastery-add-btn" class="btn-sm">+ Add</button>
+        </div>
+        <div class="mastery-list">${rows}</div>
       </div>`;
 
-    document.querySelectorAll(".topic-study-btn").forEach(btn => {
+    $("panel-mastery").querySelectorAll(".conf-btn").forEach(btn =>
+      btn.addEventListener("click", () => {
+        this.confidenceData[btn.dataset.topic] = btn.dataset.level;
+        this._saveConfidence();
+        this._renderMastery();
+      })
+    );
+    $("panel-mastery").querySelectorAll(".ms-chat").forEach(btn =>
       btn.addEventListener("click", () => {
         this._switchMode("chat");
-        $("chat-input").value = `Explain "${btn.dataset.topic}" in detail with analogies and concrete examples from my study materials.`;
-      });
+        $("chat-input").value = `Explain "${btn.dataset.topic}" in detail with analogies and examples from my study materials.`;
+      })
+    );
+    $("panel-mastery").querySelectorAll(".ms-test").forEach(btn =>
+      btn.addEventListener("click", () => {
+        this._switchMode("test");
+        setTimeout(() => {
+          const sel = $("test-topic-select");
+          if (sel) {
+            const opt = [...sel.options].find(o => o.value === btn.dataset.topic);
+            if (opt) sel.value = opt.value;
+          }
+        }, 60);
+      })
+    );
+    $("panel-mastery").querySelectorAll(".ms-plan").forEach(btn =>
+      btn.addEventListener("click", () => this._switchMode("plan"))
+    );
+    $("mastery-add-btn")?.addEventListener("click", () => {
+      const input = $("mastery-add-input");
+      const name  = input?.value.trim();
+      if (!name) return;
+      if (!this.customTopics.includes(name)) {
+        this.customTopics.push(name);
+        this._saveConfidence();
+      }
+      input.value = "";
+      this._renderMastery();
     });
-    document.querySelectorAll(".subtopic-check").forEach(cb => {
-      const key = "cb-" + cb.id;
-      cb.checked = localStorage.getItem(key) === "1";
-      cb.addEventListener("change", () => localStorage.setItem(key, cb.checked ? "1" : "0"));
+    $("mastery-add-input")?.addEventListener("keydown", e => {
+      if (e.key === "Enter") $("mastery-add-btn")?.click();
     });
   }
 
