@@ -567,13 +567,16 @@ class RecalApp {
   }
 
   _renderViewer(doc) {
-    const ext = doc.name.split(".").pop().toLowerCase();
-    let innerHtml;
+    const ext    = doc.name.split(".").pop().toLowerCase();
+    const pdfDoc = this.store.getPDFDoc(doc.id);
 
-    if (ext === "md" || ext === "markdown") {
+    let innerHtml;
+    if (pdfDoc) {
+      innerHtml = `<div id="vp-pdf-pages" class="pdf-pages-wrap">
+        <p class="pdf-pages-loading">Rendering pages…</p>
+      </div>`;
+    } else if (ext === "md" || ext === "markdown") {
       innerHtml = `<div class="viewer-markdown">${md(doc.text)}</div>`;
-    } else if (/\[Page\s+\d+\]/.test(doc.text)) {
-      innerHtml = this._renderPDFPages(doc.text);
     } else {
       innerHtml = this._renderTextContent(doc.text);
     }
@@ -597,9 +600,31 @@ class RecalApp {
             <span>${doc.name.endsWith(".pdf") ? "📄" : "📝"}</span>
             <span class="viewer-doc-name">${doc.name}</span>
           </div>
-          <div class="viewer-doc-canvas"><div class="viewer-page">${enrichHtml}${innerHtml}</div></div>
+          <div class="viewer-doc-canvas"><div class="viewer-page viewer-page--pdf">${enrichHtml}${innerHtml}</div></div>
         </div>
       </div>`;
+
+    if (pdfDoc) this._renderPDFCanvases(doc.id, pdfDoc);
+  }
+
+  async _renderPDFCanvases(docId, pdfDoc) {
+    const wrap  = $("vp-pdf-pages");
+    if (!wrap) return;
+    const scale = window.devicePixelRatio >= 2 ? 2.0 : 1.5;
+    let first   = true;
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      if (this.currentDocId !== docId || !wrap.isConnected) break;
+      const page     = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas   = document.createElement("canvas");
+      canvas.width   = viewport.width;
+      canvas.height  = viewport.height;
+      canvas.className = "pdf-canvas-page";
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      if (this.currentDocId !== docId || !wrap.isConnected) break;
+      if (first) { wrap.innerHTML = ""; first = false; }
+      wrap.appendChild(canvas);
+    }
   }
 
   _cleanText(raw) {

@@ -24,27 +24,29 @@ export class DocumentStore {
 
   async addFile(file) {
     let text;
+    let pdfDoc = null;
     if (file.name.endsWith(".pdf") || file.type === "application/pdf") {
       await this._pdfPromise;
-      text = await this._parsePDF(file);
+      pdfDoc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+      text   = await this._extractPDFText(pdfDoc);
     } else {
       text = await file.text();
     }
     const id    = this._uid++;
     const words = text.split(/\s+/).filter(Boolean).length;
     const chunks = this._chunk(text, 600, 80);
-    this._docs.set(id, { id, name: file.name, text, chunks, size: file.size, words });
+    this._docs.set(id, { id, name: file.name, text, chunks, size: file.size, words, pdfDoc });
     return id;
   }
+
+  getPDFDoc(id) { return this._docs.get(id)?.pdfDoc ?? null; }
 
   removeDoc(id) { this._docs.delete(id); }
 
   get docs()       { return [...this._docs.values()]; }
   get hasContent() { return this._docs.size > 0; }
 
-  async _parsePDF(file) {
-    const buf = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  async _extractPDFText(pdf) {
     const pages = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page    = await pdf.getPage(i);

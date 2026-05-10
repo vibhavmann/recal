@@ -1088,6 +1088,26 @@ header {
   font-size: .93rem; line-height: 1.85; color: var(--txt);
 }
 .viewer-page p { margin-bottom: .8em; }
+/* PDF canvas variant — less horizontal padding so pages use full width */
+.viewer-page--pdf { padding: 40px 32px; }
+
+/* Rendered PDF pages */
+.pdf-pages-wrap { display: flex; flex-direction: column; gap: 12px; }
+.pdf-canvas-page {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 10px rgba(0,0,0,.13);
+}
+[data-theme="dark"] .pdf-canvas-page { box-shadow: 0 2px 10px rgba(0,0,0,.5); }
+.pdf-pages-loading {
+  font-size: .82rem;
+  color: var(--txt-3);
+  font-style: italic;
+  padding: 8px 0;
+}
+
 /* Separator between PDF pages inside the single card */
 .viewer-page-divider {
   font-size: .7rem; font-weight: 700;
