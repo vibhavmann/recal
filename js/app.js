@@ -991,8 +991,10 @@ Return only the JSON.`;
 
   _bindPlan() {
     $("panel-plan").addEventListener("click", e => {
-      if (e.target.id === "gen-plan-btn")   this._generatePlan();
-      if (e.target.id === "reset-plan-btn") this._renderPlanSetup();
+      if (e.target.id === "gen-plan-btn")       this._generatePlan();
+      if (e.target.id === "reset-plan-btn")     this._renderPlanSetup();
+      if (e.target.id === "check-all-topics")   document.querySelectorAll(".topic-check-item input").forEach(cb => cb.checked = true);
+      if (e.target.id === "uncheck-all-topics") document.querySelectorAll(".topic-check-item input").forEach(cb => cb.checked = false);
     });
   }
 
@@ -1011,11 +1013,19 @@ Return only the JSON.`;
     const topics  = [...(this.topicsData ?? []).map(t => t.name), ...this.customTopics];
     const topicsSection = topics.length ? `
       <div class="form-group">
-        <label>Topics to cover <span class="form-hint">— uncheck topics you want to skip</span></label>
+        <div class="checklist-header">
+          <label>Topics to cover</label>
+          <div class="checklist-controls">
+            <button type="button" class="btn-link" id="check-all-topics">All</button>
+            <span class="txt-3">·</span>
+            <button type="button" class="btn-link" id="uncheck-all-topics">None</button>
+          </div>
+        </div>
         <div class="topic-checklist">
           ${topics.map(n => `
             <label class="topic-check-item">
-              <input type="checkbox" value="${n}" checked> ${n}
+              <input type="checkbox" value="${n}" checked>
+              <span>${n}</span>
             </label>`).join("")}
         </div>
       </div>` : "";
