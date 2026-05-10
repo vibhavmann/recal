@@ -1,5 +1,6 @@
 // app.js — Recal main controller
-import { DocumentStore } from "./documents.js";
+import { DocumentStore }           from "./documents.js";
+import { CURRICULA, SUBJECTS_BY_GRADE } from "./curricula.js";
 import { marked }        from "https://esm.run/marked";
 import DOMPurify         from "https://esm.run/dompurify";
 
@@ -110,17 +111,18 @@ async function generate({ messages, mode, temperature = 0.3 }) {
 
 class RecalApp {
   constructor() {
-    this.store          = new DocumentStore();
-    this.history        = [];
-    this.mode           = "home";
-    this.generating     = false;
-    this._topicsLoading = false;
-    this.topicsData     = null;
-    this.testState      = null;
-    this.masteryScores  = {};
-    this.confidenceData = {};
-    this.customTopics   = [];
+    this.store             = new DocumentStore();
+    this.history           = [];
+    this.mode              = "home";
+    this.generating        = false;
+    this._topicsLoading    = false;
+    this.topicsData        = null;
+    this.testState         = null;
+    this.masteryScores     = {};
+    this.confidenceData    = {};
+    this.customTopics      = [];
     this.currentDocId      = null;
+    this.loadedCurriculum  = null;
     this._notesKey         = null;
     this._chatScrollLocked = false;
     this._planHasContent   = false;
@@ -157,6 +159,10 @@ class RecalApp {
     try { const s = localStorage.getItem(`cb-mastery-${id}`);      if (s) this.masteryScores  = JSON.parse(s); } catch {}
     try { const s = localStorage.getItem(`cb-confidence-${id}`);   if (s) this.confidenceData = JSON.parse(s); } catch {}
     try { const s = localStorage.getItem(`cb-custom-topics-${id}`);if (s) this.customTopics   = JSON.parse(s); } catch {}
+    try {
+      const cid = localStorage.getItem(`cb-curriculum-${id}`);
+      if (cid && CURRICULA[cid]) this.loadedCurriculum = CURRICULA[cid];
+    } catch {}
   }
 
   _saveMastery() {
@@ -254,6 +260,80 @@ Be specific to this content — no generic filler. Keep the whole message under 
       this.history.push({ role: "assistant", content: full });
     } catch {
       box.innerHTML = md(`**${doc.name} is ready.**\n\nAsk me anything about this document, or use the tabs above to generate a test, build a study plan, or track your mastery.`);
+    }
+
+    aiEl.querySelector(".msg-spinner")?.remove();
+    this._setGenerating(false);
+    $("chat-input").focus();
+  }
+
+  // ── Curriculum ───────────────────────────────────────────────────────────────
+
+  _loadCurriculum(id) {
+    const curr = CURRICULA[id];
+    if (!curr) return;
+    this.loadedCurriculum = curr;
+    localStorage.setItem(`cb-curriculum-${this.userId}`, id);
+    this.topicsData         = null;
+    this.testState          = null;
+    this._planHasContent    = false;
+    this._masteryHasContent = false;
+    this._renderHome();
+    this._switchMode("chat");
+    this._newCurriculumChat(curr);
+  }
+
+  _clearCurriculum() {
+    this.loadedCurriculum   = null;
+    this.topicsData         = null;
+    this.testState          = null;
+    this._planHasContent    = false;
+    this._masteryHasContent = false;
+    localStorage.removeItem(`cb-curriculum-${this.userId}`);
+    this._renderHome();
+  }
+
+  async _newCurriculumChat(curr) {
+    this.history = [];
+    this._chatScrollLocked = false;
+    this._setGenerating(false);
+    $("chat-messages").innerHTML = "";
+    $("chat-input").value = "";
+    $("chat-input").style.height = "auto";
+
+    const aiEl = this._appendMsg("ai", "", true);
+    const box  = aiEl.querySelector(".msg-content");
+    this._setGenerating(true);
+
+    const topicList = curr.topics.slice(0, 12).map(t => `• ${t.name}`).join("\n");
+    const prompt = `You are Recal, an adaptive learning assistant. A student just loaded the ${curr.label} curriculum. Write a brief, enthusiastic welcome message in markdown.
+
+Curriculum: ${curr.aiHint}
+Topics covered (first 12 of ${curr.topics.length}):
+${topicList}
+
+Your message should:
+1. Confirm what's loaded (one sentence).
+2. Mention 2-3 interesting or important topics from this curriculum specifically.
+3. Suggest one concrete thing they can do right now with each tool:
+   - 💬 Chat, 🎯 Test, 📅 Study Plan, 📊 Mastery
+4. End with an invitation.
+
+Keep it under 160 words. Be specific to this curriculum.`;
+
+    let full = "";
+    try {
+      await streamChat(
+        { messages: [{ role: "user", content: prompt }], mode: "chat", temperature: 0.6 },
+        delta => {
+          full += delta;
+          box.innerHTML = md(full);
+          if (!this._chatScrollLocked) scrollEnd($("chat-messages"));
+        }
+      );
+      this.history.push({ role: "assistant", content: full });
+    } catch {
+      box.innerHTML = md(`**${curr.label} is loaded!**\n\nMastery tracker is ready with all ${curr.topics.length} topics. Use the tabs above to take a test, build a study plan, or ask me anything about the curriculum.`);
     }
 
     aiEl.querySelector(".msg-spinner")?.remove();
@@ -523,19 +603,38 @@ Be specific to this content — no generic filler. Keep the whole message under 
     const fmtW       = n => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
     const totalWords = docs.reduce((s, d) => s + (d.words ?? 0), 0);
 
-    if (!hasDocs) {
+    if (!hasDocs && !this.loadedCurriculum) {
+      // ── Empty state: hero + upload + curriculum picker ─────────────────────
+      const subjectOptsByGrade = grade => (SUBJECTS_BY_GRADE[grade] ?? [])
+        .map(s => `<option value="${s.id}">${s.label}</option>`).join("");
+
       panel.innerHTML = `
         <div class="home-wrap">
           <div class="home-inner">
             <div class="home-hero">
               <div class="home-hero-logo">✦</div>
               <h1 class="home-hero-title">Your AI study<br>companion</h1>
-              <p class="home-hero-sub">Upload study materials and let AI help you learn, test, and master them.</p>
+              <p class="home-hero-sub">Upload PDFs or choose a built-in NCERT curriculum to get started.</p>
             </div>
             <div class="home-upload-zone" id="home-drop-zone">
               <div class="home-upload-icon">📂</div>
-              <p class="home-upload-label">Drop files here or <button class="upload-link" id="home-browse">browse</button></p>
+              <p class="home-upload-label">Drop PDF here or <button class="upload-link" id="home-browse">browse</button></p>
               <p class="home-upload-hint">PDF files only</p>
+            </div>
+            <div class="home-divider"><span>or</span></div>
+            <div class="curriculum-picker">
+              <p class="curriculum-picker-label">📚 Start from a built-in curriculum</p>
+              <div class="curriculum-selects">
+                <select id="curr-grade">
+                  <option value="">Select class…</option>
+                  <option value="5">Class 5</option>
+                  <option value="6">Class 6</option>
+                </select>
+                <select id="curr-subject" disabled>
+                  <option value="">Select subject…</option>
+                </select>
+                <button id="curr-load-btn" class="btn-primary" disabled>Load</button>
+              </div>
             </div>
           </div>
         </div>`;
@@ -552,26 +651,58 @@ Be specific to this content — no generic filler. Keep the whole message under 
         });
       }
       $("home-browse")?.addEventListener("click", e => { e.stopPropagation(); $("file-input").click(); });
+
+      const gradeEl   = $("curr-grade");
+      const subjectEl = $("curr-subject");
+      const loadBtn   = $("curr-load-btn");
+      gradeEl?.addEventListener("change", () => {
+        const g = parseInt(gradeEl.value);
+        const opts = (SUBJECTS_BY_GRADE[g] ?? []).map(s => `<option value="${s.id}">${s.label}</option>`).join("");
+        subjectEl.innerHTML = `<option value="">Select subject…</option>${opts}`;
+        subjectEl.disabled  = !opts;
+        loadBtn.disabled    = true;
+      });
+      subjectEl?.addEventListener("change", () => {
+        loadBtn.disabled = !subjectEl.value;
+      });
+      loadBtn?.addEventListener("click", () => {
+        if (subjectEl.value) this._loadCurriculum(subjectEl.value);
+      });
       return;
     }
 
-    const cards = docs.map(d => `
+    const currCard = this.loadedCurriculum ? `
+      <div class="curriculum-card" id="curr-loaded-card">
+        <span class="curriculum-card-icon">🎓</span>
+        <div class="curriculum-card-info">
+          <span class="curriculum-card-label">${this.loadedCurriculum.label}</span>
+          <span class="curriculum-card-meta">NCERT · ${this.loadedCurriculum.topics.length} topics pre-loaded</span>
+        </div>
+        <button class="curriculum-card-remove" id="curr-clear-btn" title="Remove curriculum">✕</button>
+      </div>` : "";
+
+    const docCards = hasDocs ? docs.map(d => `
       <div class="nb-source-card" data-id="${d.id}">
         <div class="nb-source-icon">📄</div>
         <div class="nb-source-name">${d.name}</div>
         <div class="nb-source-meta">${fmtSize(d.size)}${d.words ? ` · ~${fmtW(d.words)}w` : ""}</div>
         <button class="nb-source-remove" data-id="${d.id}" title="Remove">✕</button>
-      </div>`).join("");
+      </div>`).join("") : "";
+
+    const sourceStat = hasDocs
+      ? `<p class="nb-doc-stat">${docs.length} PDF source${docs.length !== 1 ? "s" : ""} · ~${fmtW(totalWords)} words</p>`
+      : "";
 
     panel.innerHTML = `
       <div class="home-wrap">
         <div class="home-inner home-inner--wide">
           <div class="nb-sources-head">
             <span class="nb-sources-title">Sources</span>
-            <button id="home-add-btn" class="btn-sm">+ Add</button>
+            <button id="home-add-btn" class="btn-sm">+ Add PDF</button>
           </div>
-          <div class="nb-source-grid">${cards}</div>
-          <p class="nb-doc-stat">${docs.length} source${docs.length !== 1 ? "s" : ""} · ~${fmtW(totalWords)} words</p>
+          ${currCard}
+          ${hasDocs ? `<div class="nb-source-grid">${docCards}</div>` : ""}
+          ${sourceStat}
           <div class="home-start-grid">
             <button class="home-start-btn primary" data-mode="chat">
               💬 Chat
@@ -583,7 +714,7 @@ Be specific to this content — no generic filler. Keep the whole message under 
             </button>
             <button class="home-start-btn" data-mode="mastery">
               📊 Mastery
-              <span>See what you know and what needs work</span>
+              <span>Track your confidence on every topic</span>
             </button>
             <button class="home-start-btn" data-mode="plan">
               📅 Study plan
@@ -594,6 +725,7 @@ Be specific to this content — no generic filler. Keep the whole message under 
       </div>`;
 
     $("home-add-btn")?.addEventListener("click", () => $("file-input").click());
+    $("curr-clear-btn")?.addEventListener("click", () => this._clearCurriculum());
 
     panel.querySelectorAll(".nb-source-card").forEach(card =>
       card.addEventListener("click", e => {
@@ -880,7 +1012,7 @@ Be specific to this content — no generic filler. Keep the whole message under 
   }
 
   _quickAction(action) {
-    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    if (!this.store.hasContent && !this.loadedCurriculum) { this._toast("Upload a PDF or load a curriculum first.", "info"); return; }
     if (action === "generate-test") {
       this._switchMode("test");
       return;
@@ -915,12 +1047,13 @@ Be specific to this content — no generic filler. Keep the whole message under 
   }
 
   _initTestPanel() {
-    if (!this.store.hasContent) {
+    const hasMaterials = this.store.hasContent || this.loadedCurriculum;
+    if (!hasMaterials) {
       $("panel-test").innerHTML = `
         <div class="panel-inner center-content">
           <div style="font-size:2.5rem">🎯</div>
           <h3>No Materials Yet</h3>
-          <p class="muted">Upload study materials to generate a practice test.</p>
+          <p class="muted">Upload a PDF or load a curriculum to generate a practice test.</p>
         </div>`;
       return;
     }
@@ -928,19 +1061,20 @@ Be specific to this content — no generic filler. Keep the whole message under 
     $("panel-test").innerHTML = `
       <div class="panel-inner center-content">
         <div class="generating-anim">🎯</div>
-        <h3>Extracting topics…</h3>
+        <h3>${this.loadedCurriculum ? "Loading topics…" : "Extracting topics…"}</h3>
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
     this._extractMastery().then(() => { if (this.mode === "test") this._renderTestSetup(); });
   }
 
   _initMasteryPanel() {
-    if (!this.store.hasContent) {
+    const hasMaterials = this.store.hasContent || this.loadedCurriculum;
+    if (!hasMaterials) {
       $("panel-mastery").innerHTML = `
         <div class="panel-inner center-content">
           <div style="font-size:3rem">📊</div>
           <h3>No Materials Yet</h3>
-          <p class="muted">Upload study materials to start tracking mastery.</p>
+          <p class="muted">Upload a PDF or load a curriculum to start tracking mastery.</p>
         </div>`;
       return;
     }
@@ -948,7 +1082,7 @@ Be specific to this content — no generic filler. Keep the whole message under 
     $("panel-mastery").innerHTML = `
       <div class="panel-inner center-content">
         <div class="generating-anim">📊</div>
-        <h3>Extracting topics…</h3>
+        <h3>${this.loadedCurriculum ? "Loading topics…" : "Extracting topics…"}</h3>
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
     this._extractMastery().then(() => { if (this.mode === "mastery" && this.topicsData) this._renderMastery(); });
@@ -992,8 +1126,12 @@ Be specific to this content — no generic filler. Keep the whole message under 
     const box  = aiEl.querySelector(".msg-content");
 
     const docCtx = this.store.getContext(text, 12000);
+    const currCtx = !docCtx && this.loadedCurriculum
+      ? `[Curriculum: ${this.loadedCurriculum.aiHint}. Topics: ${this.loadedCurriculum.topics.map(t => t.name).join(", ")}]`
+      : "";
     let userContent = text;
-    if (docCtx) userContent = `=== Study Materials ===\n${docCtx}\n\n---\n\nMy question: ${text}`;
+    if (docCtx)  userContent = `=== Study Materials ===\n${docCtx}\n\n---\n\nMy question: ${text}`;
+    else if (currCtx) userContent = `${currCtx}\n\nMy question: ${text}`;
 
     const messages = [
       ...this.history.slice(-8),
@@ -1128,7 +1266,7 @@ Be specific to this content — no generic filler. Keep the whole message under 
   }
 
   async _generateTest() {
-    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    if (!this.store.hasContent && !this.loadedCurriculum) { this._toast("Upload a PDF or load a curriculum first.", "info"); return; }
 
     const selVal = $("test-topic-select")?.value ?? "";
     const topic  = selVal === "__other__"
@@ -1146,20 +1284,26 @@ Be specific to this content — no generic filler. Keep the whole message under 
         <div class="spinner-bar"><div class="spinner-fill"></div></div>
       </div>`;
 
-    const docCtx    = this.store.getContext(topic || "all topics", 10000);
     const diffLabel = { mixed: "a mix of easy, medium, and hard", easy: "easy (recall)", medium: "medium (application)", hard: "hard (analysis)" }[diff];
     const typeLabel = { mixed: "a mix of multiple choice and short answer", mcq: "multiple choice only", short: "short answer only" }[types];
 
-    const weakTopics  = Object.entries(this.masteryScores)
+    const weakTopics = Object.entries(this.masteryScores)
       .filter(([, v]) => v.pct < 0.6).map(([t]) => t).join(", ");
-    const topicNames  = this.topicsData?.map(t => t.name).join(", ") ?? "";
+    const topicNames = this.topicsData?.map(t => t.name).join(", ") ?? "";
+
+    // Build study context: prefer PDF content, fall back to curriculum hint
+    const docCtx = this.store.hasContent
+      ? this.store.getContext(topic || "all topics", 10000)
+      : "";
+    const currHint = !this.store.hasContent && this.loadedCurriculum
+      ? `Curriculum: ${this.loadedCurriculum.aiHint}\nGenerate questions entirely from your knowledge of this curriculum — no uploaded document is available.`
+      : "";
 
     const userMsg = `Generate exactly ${count} questions about "${topic || "all major topics"}" at ${diffLabel} difficulty, as ${typeLabel}.
 ${weakTopics ? `\nFocus more questions on these weak areas: ${weakTopics}` : ""}
 ${topicNames ? `\nTag each question's "topic" field using ONLY these exact names: ${topicNames}` : ""}
 
-Study material:
-${docCtx}
+${docCtx ? `Study material:\n${docCtx}` : currHint}
 
 Return only the JSON.`;
 
@@ -1419,12 +1563,12 @@ Return only the JSON.`;
 
   _renderPlanSetup() {
     this._planHasContent = false;
-    if (!this.store.hasContent) {
+    if (!this.store.hasContent && !this.loadedCurriculum) {
       $("panel-plan").innerHTML = `
         <div class="panel-inner center-content">
           <div style="font-size:3rem">📅</div>
           <h3>No Materials Yet</h3>
-          <p class="muted">Upload study materials to build a study plan.</p>
+          <p class="muted">Upload a PDF or load a curriculum to build a study plan.</p>
         </div>`;
       return;
     }
@@ -1484,7 +1628,7 @@ Return only the JSON.`;
   }
 
   async _generatePlan() {
-    if (!this.store.hasContent) { this._toast("Upload study materials first.", "info"); return; }
+    if (!this.store.hasContent && !this.loadedCurriculum) { this._toast("Upload a PDF or load a curriculum first.", "info"); return; }
     this._planHasContent = true;
     this._setGenerating(true);
 
@@ -1517,7 +1661,9 @@ Return only the JSON.`;
           const confNote = conf && conf !== "none" ? ` [confidence: ${conf}]` : "";
           return `• ${n}${subs}${confNote}`;
         }).join("\n")
-      : this.store.getTopicNamesOverview();
+      : this.store.hasContent
+        ? this.store.getTopicNamesOverview()
+        : (this.loadedCurriculum?.topics.map(t => `• ${t.name} (${t.subtopics.slice(0,3).join(", ")})`).join("\n") ?? "");
 
     const userMsg = `Create a concise adaptive study plan in tabular format.
 
@@ -1569,12 +1715,13 @@ No prose paragraphs — tables and bullets only.`;
   // ── Mastery Tracking ──────────────────────────────────────────────────────────
 
   _renderMasteryEmpty() {
-    if (!this.store.hasContent) {
+    const hasMaterials = this.store.hasContent || this.loadedCurriculum;
+    if (!hasMaterials) {
       $("panel-mastery").innerHTML = `
         <div class="panel-inner center-content">
           <div style="font-size:3rem">📊</div>
           <h3>No Materials Yet</h3>
-          <p class="muted">Upload study materials to start tracking mastery.</p>
+          <p class="muted">Upload a PDF or load a curriculum to start tracking mastery.</p>
         </div>`;
     }
   }
@@ -1584,8 +1731,16 @@ No prose paragraphs — tables and bullets only.`;
   }
 
   async _extractMastery() {
-    if (!this.store.hasContent) return;
+    const hasMaterials = this.store.hasContent || this.loadedCurriculum;
+    if (!hasMaterials) return;
     if (this._topicsLoading) return;
+
+    // Curriculum topics load instantly — no AI needed
+    if (!this.store.hasContent && this.loadedCurriculum) {
+      this.topicsData = this.loadedCurriculum.topics;
+      this._renderMastery();
+      return;
+    }
 
     // Return cached topics instantly if the same documents are loaded
     const fp   = this._docFingerprint();
@@ -1612,22 +1767,36 @@ No prose paragraphs — tables and bullets only.`;
       const raw    = await generate({ messages: [{ role: "user", content: userMsg }], mode: "topics" });
       const parsed = parseJSON(raw);
       this.topicsData = parsed.topics ?? (Array.isArray(parsed) ? parsed : null);
+
+      // Merge curriculum topics if also loaded
+      if (this.loadedCurriculum && this.topicsData) {
+        const existing = new Set(this.topicsData.map(t => t.name));
+        const extra = this.loadedCurriculum.topics.filter(t => !existing.has(t.name));
+        this.topicsData = [...this.topicsData, ...extra];
+      }
+
       if (!this.topicsData?.length) throw new Error("No topics found — try uploading more content.");
       localStorage.setItem(cKey, JSON.stringify(this.topicsData));
       this._renderMastery();
     } catch (err) {
-      this.topicsData = null;
-      $("panel-mastery").innerHTML = `
-        <div class="panel-inner center-content">
-          <div style="font-size:2.5rem">⚠️</div>
-          <h3>Could not extract topics</h3>
-          <p class="muted">${err.message}</p>
-          <button id="retry-mastery-btn" class="btn-secondary">Retry</button>
-        </div>`;
-      $("retry-mastery-btn")?.addEventListener("click", () => {
-        this._topicsLoading = false;
-        this._extractMastery();
-      });
+      // Fall back to curriculum topics if available
+      if (this.loadedCurriculum) {
+        this.topicsData = this.loadedCurriculum.topics;
+        this._renderMastery();
+      } else {
+        this.topicsData = null;
+        $("panel-mastery").innerHTML = `
+          <div class="panel-inner center-content">
+            <div style="font-size:2.5rem">⚠️</div>
+            <h3>Could not extract topics</h3>
+            <p class="muted">${err.message}</p>
+            <button id="retry-mastery-btn" class="btn-secondary">Retry</button>
+          </div>`;
+        $("retry-mastery-btn")?.addEventListener("click", () => {
+          this._topicsLoading = false;
+          this._extractMastery();
+        });
+      }
     }
     this._topicsLoading = false;
   }
