@@ -420,27 +420,27 @@ class RecalApp {
 
     const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-    // Split on [Page N] markers if present (PDFs), otherwise treat as one block
-    const pagePattern = /\[Page\s+(\d+)\]/g;
-    const hasPages = pagePattern.test(doc.text);
-    let pagesHtml;
+    // Render all content in a single card so it always fills the canvas height
+    const hasPages = /\[Page\s+\d+\]/.test(doc.text);
+    let innerHtml;
 
     if (hasPages) {
-      const parts  = doc.text.split(/\[Page\s+\d+\]/);
-      const nums   = [...doc.text.matchAll(/\[Page\s+(\d+)\]/g)].map(m => m[1]);
-      pagesHtml = parts
-        .map((chunk, i) => {
-          if (!chunk.trim()) return "";
-          const paras = chunk.split(/\n{1,}/).filter(l => l.trim())
-            .map(l => `<p>${esc(l)}</p>`).join("");
-          const label = nums[i] ? `<div class="viewer-page-label">Page ${nums[i]}</div>` : "";
-          return `<div class="viewer-page">${label}${paras}</div>`;
-        }).join("");
+      const parts = doc.text.split(/\[Page\s+\d+\]/);
+      const nums  = [...doc.text.matchAll(/\[Page\s+(\d+)\]/g)].map(m => m[1]);
+      innerHtml = parts.map((chunk, i) => {
+        if (!chunk.trim()) return "";
+        const paras = chunk.split(/\n+/).filter(l => l.trim())
+          .map(l => `<p>${esc(l)}</p>`).join("");
+        const divider = nums[i]
+          ? `<div class="viewer-page-divider">Page ${nums[i]}</div>`
+          : "";
+        return divider + paras;
+      }).join("");
     } else {
-      const paras = doc.text.split(/\n{2,}/).filter(p => p.trim())
+      innerHtml = doc.text.split(/\n{2,}/).filter(p => p.trim())
         .map(p => `<p>${esc(p).replace(/\n/g,"<br>")}</p>`).join("");
-      pagesHtml = `<div class="viewer-page">${paras}</div>`;
     }
+    const pagesHtml = `<div class="viewer-page">${innerHtml}</div>`;
 
     $("panel-viewer").innerHTML = `
       <div class="viewer-layout">
