@@ -206,19 +206,36 @@ class RecalApp {
     const openBtn  = $("sidebar-toggle");
     const closeBtn = $("sidebar-close");
 
-    const open  = () => { sidebar.classList.add("open");  overlay.hidden = false; };
-    const close = () => { sidebar.classList.remove("open"); overlay.hidden = true; };
+    const isMobile = () => window.innerWidth <= 700;
 
-    openBtn?.addEventListener("click", open);
+    const open = () => {
+      if (isMobile()) { sidebar.classList.add("open"); overlay.hidden = false; }
+      else            { sidebar.classList.remove("collapsed"); localStorage.setItem("recal-sidebar", "open"); }
+    };
+    const close = () => {
+      if (isMobile()) { sidebar.classList.remove("open"); overlay.hidden = true; }
+      else            { sidebar.classList.add("collapsed"); localStorage.setItem("recal-sidebar", "collapsed"); }
+    };
+    const toggle = () => {
+      if (isMobile()) sidebar.classList.contains("open") ? close() : open();
+      else            sidebar.classList.contains("collapsed") ? open() : close();
+    };
+
+    openBtn?.addEventListener("click", toggle);
     closeBtn?.addEventListener("click", close);
     overlay?.addEventListener("click", close);
 
     document.querySelectorAll(".mode-btn").forEach(btn =>
-      btn.addEventListener("click", () => { if (window.innerWidth <= 700) close(); })
+      btn.addEventListener("click", () => { if (isMobile()) close(); })
     );
     document.querySelectorAll(".qa-btn").forEach(btn =>
-      btn.addEventListener("click", close)
+      btn.addEventListener("click", () => { if (isMobile()) close(); })
     );
+
+    // Start collapsed on desktop (unless user previously opened it)
+    if (!isMobile() && localStorage.getItem("recal-sidebar") !== "open") {
+      sidebar.classList.add("collapsed");
+    }
   }
 
   // ── Sidebar / Documents ───────────────────────────────────────────────────────

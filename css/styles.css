@@ -198,7 +198,11 @@ header {
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
   overflow: hidden;
-  transition: background var(--transition);
+  transition: width 0.2s ease, border-color 0.2s ease, background var(--transition);
+}
+.sidebar.collapsed {
+  width: 0;
+  border-right-color: transparent;
 }
 .sidebar.drag-over { background: var(--clr-primary-lt); }
 .sidebar-top { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
@@ -735,9 +739,9 @@ header {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--txt-3); }
 
-/* Mobile sidebar toggle button */
+/* Sidebar toggle button — always visible */
 .sidebar-toggle {
-  display: none;
+  display: flex;
   font-size: 1.2rem;
   width: 36px; height: 36px;
   border-radius: var(--radius-sm);
@@ -793,7 +797,6 @@ header {
   header { padding: 0 10px; gap: 8px; }
   .brand-sm { font-size: 1.15rem; flex-shrink: 0; }
   .model-badge { display: none; }
-  .sidebar-toggle { display: flex; }
 
   /* Mode nav — horizontally scrollable, no wrap */
   .mode-nav {
