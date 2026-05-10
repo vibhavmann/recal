@@ -120,8 +120,9 @@ class RecalApp {
     this.masteryScores  = {};
     this.confidenceData = {};
     this.customTopics   = [];
-    this.currentDocId   = null;
-    this._notesKey      = null;
+    this.currentDocId     = null;
+    this._notesKey        = null;
+    this._chatScrollLocked = false;
 
     this._initUser();
     this._bindTheme();
@@ -193,6 +194,7 @@ class RecalApp {
 
   _newChat() {
     this.history = [];
+    this._chatScrollLocked = false;
     this._setGenerating(false);
     $("chat-messages").innerHTML = "";
     $("chat-input").value = "";
@@ -602,6 +604,7 @@ class RecalApp {
   _bindChat() {
     const input = $("chat-input");
     const btn   = $("send-btn");
+    const msgs  = $("chat-messages");
     input.addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._sendMessage(); }
     });
@@ -611,6 +614,12 @@ class RecalApp {
       btn.disabled = !input.value.trim() || this.generating;
     });
     btn.addEventListener("click", () => this._sendMessage());
+
+    // Lock auto-scroll when user scrolls up; unlock when they return to bottom
+    msgs?.addEventListener("scroll", () => {
+      const atBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60;
+      this._chatScrollLocked = !atBottom;
+    });
   }
 
   async _sendMessage() {
@@ -618,6 +627,7 @@ class RecalApp {
     const text  = input.value.trim();
     if (!text || this.generating) return;
 
+    this._chatScrollLocked = false;   // always follow new outgoing message
     this._setGenerating(true);
     input.value = "";
     input.style.height = "auto";
@@ -640,7 +650,7 @@ class RecalApp {
       await streamChat({ messages, mode: "chat" }, delta => {
         full += delta;
         box.innerHTML = md(full);
-        scrollEnd($("chat-messages"));
+        if (!this._chatScrollLocked) scrollEnd($("chat-messages"));
       });
       this.history.push({ role: "user",      content: text });
       this.history.push({ role: "assistant", content: full });
@@ -683,7 +693,7 @@ class RecalApp {
     div.appendChild(avatar);
     div.appendChild(bubble);
     container.appendChild(div);
-    scrollEnd(container);
+    if (role === "user" || !this._chatScrollLocked) scrollEnd(container);
     return div;
   }
 
