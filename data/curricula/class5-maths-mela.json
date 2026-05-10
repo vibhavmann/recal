@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "book": "Maths Mela",
+    "class": 5,
+    "subject": "Mathematics",
+    "board": "NCERT / CBSE",
+    "edition": "Reprint 2026-27",
+    "source_pdf": "https://ncert.nic.in/textbook/pdf/eemm1ps.pdf",
+    "chapters_verified": true,
+    "subtopics_verified": false,
+    "notes": "Chapter names verified against official NCERT PDF (eemm1ps.pdf). Subtopics are inferred from chapter context — verify against actual PDF before marking as verified."
+  },
+  "chapters": [
+    { "no": 1,  "name": "We the Travellers — I",   "subtopics": [] },
+    { "no": 2,  "name": "Fractions",                "subtopics": [] },
+    { "no": 3,  "name": "Angles as Turns",          "subtopics": [] },
+    { "no": 4,  "name": "We the Travellers — II",   "subtopics": [] },
+    { "no": 5,  "name": "Far and Near",             "subtopics": [] },
+    { "no": 6,  "name": "The Dairy Farm",           "subtopics": [] },
+    { "no": 7,  "name": "Shapes and Patterns",      "subtopics": [] },
+    { "no": 8,  "name": "Weight and Capacity",      "subtopics": [] },
+    { "no": 9,  "name": "Coconut Farm",             "subtopics": [] },
+    { "no": 10, "name": "Symmetrical Designs",      "subtopics": [] },
+    { "no": 11, "name": "Grandmother's Quilt",      "subtopics": [] },
+    { "no": 12, "name": "Racing Seconds",           "subtopics": [] },
+    { "no": 13, "name": "Animal Jumps",             "subtopics": [] },
+    { "no": 14, "name": "Maps and Locations",       "subtopics": [] },
+    { "no": 15, "name": "Data Through Pictures",    "subtopics": [] }
+  ]
+}

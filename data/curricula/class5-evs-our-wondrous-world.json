@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "book": "Our Wondrous World",
+    "class": 5,
+    "subject": "Environmental Studies",
+    "board": "NCERT / CBSE",
+    "edition": "2025-26",
+    "source_pdf": "https://ncert.nic.in/textbook/pdf/eeww1ps.pdf",
+    "chapters_verified": true,
+    "subtopics_verified": false,
+    "notes": "Chapter names verified via Tiwari Academy and LearnCBSE (cross-referenced). Organised into 5 units. Subtopics to be filled from actual PDF."
+  },
+  "units": [
+    { "no": 1, "name": "Life Around Us" },
+    { "no": 2, "name": "Health and Well-being" },
+    { "no": 3, "name": "Incredible India" },
+    { "no": 4, "name": "Things Around Us" },
+    { "no": 5, "name": "Our Amazing Planet" }
+  ],
+  "chapters": [
+    { "no": 1,  "unit": 1, "name": "Water — The Essence of Life",  "subtopics": [] },
+    { "no": 2,  "unit": 1, "name": "Journey of a River",           "subtopics": [] },
+    { "no": 3,  "unit": 2, "name": "The Mystery of Food",          "subtopics": [] },
+    { "no": 4,  "unit": 2, "name": "Our School — A Happy Place",   "subtopics": [] },
+    { "no": 5,  "unit": 3, "name": "Our Vibrant Country",          "subtopics": [] },
+    { "no": 6,  "unit": 3, "name": "Some Unique Places",           "subtopics": [] },
+    { "no": 7,  "unit": 4, "name": "Energy — How Things Work",     "subtopics": [] },
+    { "no": 8,  "unit": 4, "name": "Clothes — How Things are Made","subtopics": [] },
+    { "no": 9,  "unit": 5, "name": "Rhythms of Nature",            "subtopics": [] },
+    { "no": 10, "unit": 5, "name": "Earth — Our Shared Home",      "subtopics": [] }
+  ]
+}

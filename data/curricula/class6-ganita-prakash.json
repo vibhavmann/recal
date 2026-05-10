@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "book": "Ganita Prakash",
+    "class": 6,
+    "subject": "Mathematics",
+    "board": "NCERT / CBSE",
+    "edition": "Reprint 2026-27",
+    "source_pdf": "https://ncert.nic.in/textbook/pdf/fegp1ps.pdf",
+    "chapters_verified": true,
+    "subtopics_verified": false,
+    "notes": "Chapter names verified against official NCERT PDF (fegp1ps.pdf) via learninsta.com cross-reference. Subtopics to be filled from actual PDF."
+  },
+  "chapters": [
+    { "no": 1,  "name": "Patterns in Mathematics",       "subtopics": [] },
+    { "no": 2,  "name": "Lines and Angles",              "subtopics": [] },
+    { "no": 3,  "name": "Number Play",                   "subtopics": [] },
+    { "no": 4,  "name": "Data Handling and Presentation","subtopics": [] },
+    { "no": 5,  "name": "Prime Time",                    "subtopics": [] },
+    { "no": 6,  "name": "Perimeter and Area",            "subtopics": [] },
+    { "no": 7,  "name": "Fractions",                     "subtopics": [] },
+    { "no": 8,  "name": "Playing with Constructions",    "subtopics": [] },
+    { "no": 9,  "name": "Symmetry",                      "subtopics": [] },
+    { "no": 10, "name": "The Other Side of Zero",        "subtopics": [] }
+  ]
+}

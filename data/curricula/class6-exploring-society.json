@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "book": "Exploring Society: India and Beyond",
+    "class": 6,
+    "subject": "Social Science",
+    "board": "NCERT / CBSE",
+    "edition": "2026-27",
+    "source_pdf": "https://ncert.nic.in/textbook/pdf/fess1ps.pdf",
+    "chapters_verified": true,
+    "subtopics_verified": false,
+    "notes": "Replaces the three separate books (Our Pasts I, The Earth Our Habitat, Social and Political Life I) with one integrated text. Chapter names verified via tiwariacademy.com. Covers Geography, History, Civics, and Economics thematically. Subtopics to be filled from actual PDF."
+  },
+  "themes": [
+    "Geography",
+    "History",
+    "Governance and Civics",
+    "Economy and Society"
+  ],
+  "chapters": [
+    { "no": 1,  "name": "Locating Places on the Earth",                                       "theme": "Geography",              "subtopics": [] },
+    { "no": 2,  "name": "Oceans and Continents",                                              "theme": "Geography",              "subtopics": [] },
+    { "no": 3,  "name": "Landforms and Life",                                                 "theme": "Geography",              "subtopics": [] },
+    { "no": 4,  "name": "Timeline and Sources of History",                                    "theme": "History",                "subtopics": [] },
+    { "no": 5,  "name": "India, That Is Bharat",                                              "theme": "History",                "subtopics": [] },
+    { "no": 6,  "name": "The Beginnings of Indian Civilisation",                              "theme": "History",                "subtopics": [] },
+    { "no": 7,  "name": "India's Cultural Roots",                                             "theme": "History",                "subtopics": [] },
+    { "no": 8,  "name": "Unity in Diversity, or 'Many in the One'",                          "theme": "Governance and Civics",  "subtopics": [] },
+    { "no": 9,  "name": "Family and Community",                                               "theme": "Governance and Civics",  "subtopics": [] },
+    { "no": 10, "name": "Grassroots Democracy — Part 1: Governance",                         "theme": "Governance and Civics",  "subtopics": [] },
+    { "no": 11, "name": "Grassroots Democracy — Part 2: Local Government in Rural Areas",    "theme": "Governance and Civics",  "subtopics": [] },
+    { "no": 12, "name": "Grassroots Democracy — Part 3: Local Government in Urban Areas",    "theme": "Governance and Civics",  "subtopics": [] },
+    { "no": 13, "name": "The Value of Work",                                                  "theme": "Economy and Society",    "subtopics": [] },
+    { "no": 14, "name": "Economic Activities Around Us",                                      "theme": "Economy and Society",    "subtopics": [] }
+  ]
+}
