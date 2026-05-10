@@ -869,13 +869,13 @@ header {
 
 /* ── Home Panel ──────────────────────────────────────────────────────────────── */
 .home-wrap {
-  flex: 1; overflow-y: auto;
-  padding: 48px 32px;
+  flex: 1; overflow: hidden;
+  padding: 32px 32px;
   display: flex; flex-direction: column;
 }
 .home-inner {
   max-width: 560px; margin: 0 auto; width: 100%;
-  display: flex; flex-direction: column; gap: 28px;
+  display: flex; flex-direction: column; gap: 16px;
 }
 
 /* Hero */
@@ -899,7 +899,7 @@ header {
 .home-upload-zone {
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
-  padding: 36px 24px;
+  padding: 24px 24px;
   cursor: pointer;
   transition: all var(--transition);
   background: var(--bg-card);

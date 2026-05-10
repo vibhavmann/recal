@@ -343,11 +343,6 @@ class RecalApp {
     panel.innerHTML = `
       <div class="home-wrap">
         <div class="home-inner">
-          <div class="home-hero">
-            <div class="home-hero-logo">🎓</div>
-            <h1 class="home-hero-title"><span>Re</span><span class="accent">cal</span></h1>
-            <p class="home-hero-sub">Your adaptive study companion.</p>
-          </div>
           <div class="home-docs">
             <div class="home-docs-head">
               <span class="home-docs-title">Materials</span>
