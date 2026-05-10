@@ -186,6 +186,7 @@ header {
 .layout {
   display: flex;
   flex: 1;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -282,7 +283,7 @@ header {
 .qa-btn:hover { background: var(--clr-primary-lt); color: var(--clr-primary); }
 
 /* ── Content Area ─────────────────────────────────────────────────────────── */
-.content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.content { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 .panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
 .panel.active { display: flex; }
 
