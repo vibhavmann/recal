@@ -606,87 +606,62 @@ class RecalApp {
   async _renderStructuredPDF(docId, pdfDoc) {
     const container = $("vp-pdf-content");
     if (!container) return;
-    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
     for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
       if (this.currentDocId !== docId || !container.isConnected) break;
 
-      const page    = await pdfDoc.getPage(pageNum);
-      const content = await page.getTextContent();
-      const items   = content.items.filter(it => typeof it.str === "string");
+      const page     = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1 });
+      const { items: raw } = await page.getTextContent();
+
+      // Normalise raw items
+      let items = raw
+        .filter(it => typeof it.str === "string" && it.str.trim())
+        .map(it => ({
+          str:      it.str,
+          x:        it.transform[4],
+          y:        it.transform[5],
+          fontSize: Math.abs(it.transform[3]),
+          width:    it.width || 0,
+          fontName: it.fontName || "",
+        }));
       if (!items.length) continue;
 
-      // Median font size for this page = body text reference
-      const sizes    = items.map(it => Math.abs(it.transform[3])).filter(s => s > 1).sort((a,b) => a - b);
+      // 1. Deduplicate — same text within a 3 pt grid cell (handles shadow/outline fonts
+      //    that store the same glyph multiple times at slightly offset positions)
+      const seen = new Set();
+      items = items.filter(it => {
+        const key = `${Math.round(it.x / 3)}|${Math.round(it.y / 3)}|${it.str}`;
+        return seen.has(key) ? false : (seen.add(key), true);
+      });
+
+      // 2. Median font size = body text reference for this page
+      const sizes    = items.map(it => it.fontSize).filter(s => s > 1).sort((a,b) => a - b);
       const bodySize = sizes[Math.floor(sizes.length / 2)] || 12;
 
-      // Group items into lines by rounded y-coordinate (±2 pt tolerance)
-      const byY = new Map();
-      for (const item of items) {
-        const y = Math.round(item.transform[5] / 2) * 2;
-        if (!byY.has(y)) byY.set(y, []);
-        byY.get(y).push({
-          str:      item.str,
-          x:        item.transform[4],
-          fontSize: Math.abs(item.transform[3]),
-          fontName: item.fontName || "",
-        });
+      // 3. Column detection — find largest x-gap in the middle 40 % of page width
+      const pageWidth = viewport.width;
+      const xSorted   = items.map(it => it.x).sort((a,b) => a - b);
+      let splitX = null, maxGap = 0;
+      const lb = pageWidth * 0.3, rb = pageWidth * 0.7;
+      for (let i = 1; i < xSorted.length; i++) {
+        const mid = (xSorted[i] + xSorted[i - 1]) / 2;
+        const gap = xSorted[i] - xSorted[i - 1];
+        if (mid >= lb && mid <= rb && gap > maxGap) { maxGap = gap; splitX = mid; }
+      }
+      // Require a substantial gap and content on both sides
+      if (maxGap < 25 ||
+          items.filter(it => it.x <  splitX).length < 5 ||
+          items.filter(it => it.x >= splitX).length < 5) {
+        splitX = null;
       }
 
-      // Sort lines top-to-bottom (PDF y-axis is bottom-up)
-      const lines = [...byY.entries()]
-        .sort(([ya],[yb]) => yb - ya)
-        .map(([y, its]) => ({
-          y,
-          items:       its.sort((a,b) => a.x - b.x),
-          maxFontSize: Math.max(...its.map(i => i.fontSize)),
-          text:        its.sort((a,b) => a.x - b.x).map(i => i.str).join(""),
-        }));
+      // 4. Partition into segments (one per column) and render each independently
+      const segments = splitX
+        ? [items.filter(it => it.x < splitX), items.filter(it => it.x >= splitX)]
+        : [items];
 
-      // 40th-percentile gap = typical single line spacing for this page
-      const gaps = lines.slice(1).map((l,i) => lines[i].y - l.y).filter(g => g > 0).sort((a,b) => a - b);
-      const typicalGap = gaps[Math.floor(gaps.length * 0.4)] || 14;
-
-      // Accumulate lines into paragraphs, flush when gap or heading transition
-      const pageHtml = [];
-      let   paraLines = [];
-      let   lastY     = null;
-
-      const flushPara = () => {
-        if (!paraLines.length) return;
-        const maxSize = Math.max(...paraLines.map(l => l.maxFontSize));
-        const html = paraLines.map(line =>
-          line.items.map(it => {
-            const t      = esc(it.str);
-            const bold   = /bold|heavy|black/i.test(it.fontName);
-            const italic = /italic|oblique/i.test(it.fontName);
-            if (bold && italic) return `<strong><em>${t}</em></strong>`;
-            if (bold)           return `<strong>${t}</strong>`;
-            if (italic)         return `<em>${t}</em>`;
-            return t;
-          }).join("")
-        ).join(" ");
-
-        if (!html.trim()) { paraLines = []; return; }
-        if      (maxSize > bodySize * 1.9) pageHtml.push(`<h2 class="pdf-h2">${html}</h2>`);
-        else if (maxSize > bodySize * 1.4) pageHtml.push(`<h3 class="pdf-h3">${html}</h3>`);
-        else if (maxSize > bodySize * 1.2) pageHtml.push(`<h4 class="pdf-h4">${html}</h4>`);
-        else                               pageHtml.push(`<p>${html}</p>`);
-        paraLines = [];
-      };
-
-      for (const line of lines) {
-        if (!line.text.trim()) continue;
-        const gap         = lastY !== null ? lastY - line.y : 0;
-        const isNewBlock  = paraLines.length && (
-          gap > typicalGap * 1.6 ||
-          (line.maxFontSize > bodySize * 1.2 && (paraLines.at(-1)?.maxFontSize ?? 0) <= bodySize * 1.1)
-        );
-        if (isNewBlock) flushPara();
-        paraLines.push(line);
-        lastY = line.y;
-      }
-      flushPara();
+      const pageHtml = segments.map(seg => this._pdfSegmentToHtml(seg, bodySize)).join("");
 
       if (this.currentDocId !== docId || !container.isConnected) break;
 
@@ -697,11 +672,94 @@ class RecalApp {
 
       const pageEl = document.createElement("div");
       pageEl.className = "pdf-text-page";
-      pageEl.innerHTML = pageHtml.join("");
+      pageEl.innerHTML = pageHtml;
       container.appendChild(pageEl);
 
-      if (pageNum === 1) container.querySelector(".pdf-loading")?.remove();
+      container.querySelector(".pdf-loading")?.remove();
     }
+  }
+
+  _pdfSegmentToHtml(items, bodySize) {
+    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    if (!items.length) return "";
+
+    // Group into lines by y (3 pt rounding)
+    const byY = new Map();
+    for (const item of items) {
+      const y = Math.round(item.y / 3) * 3;
+      if (!byY.has(y)) byY.set(y, []);
+      byY.get(y).push(item);
+    }
+
+    // Sort lines top-to-bottom; items within each line left-to-right
+    const lines = [...byY.entries()]
+      .sort(([ya],[yb]) => yb - ya)
+      .map(([y, its]) => ({
+        y,
+        items:       its.sort((a,b) => a.x - b.x),
+        maxFontSize: Math.max(...its.map(i => i.fontSize)),
+      }));
+
+    // 40th-percentile inter-line gap = typical single-line spacing
+    const gaps = lines.slice(1).map((l,i) => lines[i].y - l.y).filter(g => g > 0).sort((a,b) => a - b);
+    const typicalGap = gaps[Math.floor(gaps.length * 0.4)] || 14;
+
+    const html    = [];
+    let paraLines = [];
+    let lastY     = null;
+
+    const flushPara = () => {
+      if (!paraLines.length) return;
+      const maxSize = Math.max(...paraLines.map(l => l.maxFontSize));
+      const content = paraLines.map(l => this._joinPDFLine(l.items, esc)).join(" ").trim();
+      if (!content) { paraLines = []; return; }
+      if      (maxSize > bodySize * 1.9) html.push(`<h2 class="pdf-h2">${content}</h2>`);
+      else if (maxSize > bodySize * 1.4) html.push(`<h3 class="pdf-h3">${content}</h3>`);
+      else if (maxSize > bodySize * 1.2) html.push(`<h4 class="pdf-h4">${content}</h4>`);
+      else                               html.push(`<p>${content}</p>`);
+      paraLines = [];
+    };
+
+    for (const line of lines) {
+      const gap = lastY !== null ? lastY - line.y : 0;
+      const isNewBlock = paraLines.length && (
+        gap > typicalGap * 1.6 ||
+        (line.maxFontSize > bodySize * 1.2 && (paraLines.at(-1)?.maxFontSize ?? 0) <= bodySize * 1.05)
+      );
+      if (isNewBlock) flushPara();
+      paraLines.push(line);
+      lastY = line.y;
+    }
+    flushPara();
+
+    return html.join("");
+  }
+
+  _joinPDFLine(items, esc) {
+    // Join text items within a line using item.width to decide spacing.
+    // If the gap to the next item is < 15 % of the font size (letter-spacing / tight
+    // kerning), no space is inserted — this fixes spaced-letter rendering like
+    // "m o r t a l i t y" that comes from PDFs with per-glyph transforms.
+    let out = "";
+    for (let i = 0; i < items.length; i++) {
+      const cur    = items[i];
+      const text   = esc(cur.str);
+      const bold   = /bold|heavy|black/i.test(cur.fontName);
+      const italic = /italic|oblique/i.test(cur.fontName);
+      const styled = bold && italic ? `<strong><em>${text}</em></strong>`
+                   : bold           ? `<strong>${text}</strong>`
+                   : italic         ? `<em>${text}</em>`
+                   : text;
+
+      if (i === 0) { out += styled; continue; }
+
+      const prev      = items[i - 1];
+      const prevRight = prev.x + (prev.width > 0 ? prev.width : prev.str.length * prev.fontSize * 0.5);
+      const gap       = cur.x - prevRight;
+
+      out += (gap < cur.fontSize * 0.15 ? "" : " ") + styled;
+    }
+    return out;
   }
 
   _cleanText(raw) {
