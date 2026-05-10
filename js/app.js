@@ -361,6 +361,7 @@ class RecalApp {
     try {
       const id = await this.store.addFile(file);
       this._finaliseDocItem(item, id, file.name, file.size);
+      this._enrichDoc(id, item);
       this._toast(`Added: ${file.name}`, "success");
       this.topicsData         = null;
       this.testState          = null;
@@ -421,6 +422,42 @@ class RecalApp {
     if (this.mode === "viewer" && this.currentDocId === null) this._switchMode("home");
     else if (this.mode === "mastery") this._renderMasteryEmpty();
     this._renderHome();
+  }
+
+  async _enrichDoc(id, sidebarItem) {
+    const doc = this.store.docs.find(d => d.id === id);
+    if (!doc) return;
+
+    const cacheKey = `recal-enrich-${doc.name}:${doc.size}`;
+    const cached   = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        doc.enrich = JSON.parse(cached);
+        if (this.currentDocId === id) this._renderViewer(doc);
+      } catch {}
+      return;
+    }
+
+    const excerpt = doc.text.split(/\s+/).slice(0, 2500).join(" ");
+    try {
+      const raw    = await generate({
+        messages: [{ role: "user", content: `Document content:\n\n${excerpt}` }],
+        mode: "enrich",
+        temperature: 0.3,
+      });
+      const parsed = parseJSON(raw);
+      if (parsed?.title && parsed?.summary) {
+        doc.enrich = parsed;
+        localStorage.setItem(cacheKey, JSON.stringify(parsed));
+      }
+    } catch {}
+
+    const statusEl = sidebarItem?.querySelector(".doc-status");
+    if (statusEl && statusEl.textContent === "Preparing…") statusEl.textContent = fmtSize(doc.size);
+    if (this.currentDocId === id) {
+      const d = this.store.docs.find(d => d.id === id);
+      if (d) this._renderViewer(d);
+    }
   }
 
   _renderHome() {
@@ -541,6 +578,18 @@ class RecalApp {
       innerHtml = this._renderTextContent(doc.text);
     }
 
+    const enrichHtml = doc.enrich
+      ? `<div class="viewer-enrich">
+           <h1 class="viewer-enrich-title">${doc.enrich.title}</h1>
+           <div class="viewer-enrich-summary">
+             <span class="viewer-enrich-label">Overview</span>
+             <p>${doc.enrich.summary}</p>
+           </div>
+         </div>`
+      : `<div class="viewer-enrich viewer-enrich-loading">
+           <div class="viewer-enrich-preparing">✦ Preparing document overview…</div>
+         </div>`;
+
     $("panel-viewer").innerHTML = `
       <div class="viewer-layout">
         <div class="viewer-doc">
@@ -548,7 +597,7 @@ class RecalApp {
             <span>${doc.name.endsWith(".pdf") ? "📄" : "📝"}</span>
             <span class="viewer-doc-name">${doc.name}</span>
           </div>
-          <div class="viewer-doc-canvas"><div class="viewer-page">${innerHtml}</div></div>
+          <div class="viewer-doc-canvas"><div class="viewer-page">${enrichHtml}${innerHtml}</div></div>
         </div>
       </div>`;
   }

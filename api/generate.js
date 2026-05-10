@@ -39,6 +39,17 @@ Guidelines:
 - Base every question strictly on the study material provided
 - If weak topics are listed, generate more questions on those topics`,
 
+  enrich: `You are enriching a study document for display. Output ONLY valid JSON — no markdown fences, no extra text.
+
+Schema:
+{
+  "title": "Clean, descriptive title for this document (under 80 characters)",
+  "summary": "3–5 sentence overview: what this document is about, the main topics it covers, and what a student will gain from studying it."
+}
+
+Use the document's own title if one is clearly present; otherwise infer from the content.
+Keep the summary informative and specific — it is shown to the student before they read.`,
+
   topics: `You are Recal extracting a mastery map. Output ONLY valid JSON — no markdown, no extra text.
 
 Schema:
@@ -94,7 +105,7 @@ export default async function handler(req) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const maxTokens    = mode === "topics" ? 3000 : 4096;
+        const maxTokens    = mode === "topics" ? 3000 : mode === "enrich" ? 500 : 4096;
         const claudeStream = anthropic.messages.stream({
           model, max_tokens: maxTokens, temperature, system, messages,
         });
