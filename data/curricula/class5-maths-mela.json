@@ -8,23 +8,261 @@
     "source_pdf": "https://ncert.nic.in/textbook/pdf/eemm1ps.pdf",
     "chapters_verified": true,
     "subtopics_verified": false,
-    "notes": "Chapter names verified against official NCERT PDF (eemm1ps.pdf). Subtopics are inferred from chapter context — verify against actual PDF before marking as verified."
+    "notes": "Chapter names verified against official NCERT PDF (eemm1ps.pdf). Subtopics are inferred from chapter context — verify against actual PDF before marking as verified.",
+    "subtopics_extracted": true
   },
   "chapters": [
-    { "no": 1,  "name": "We the Travellers — I",   "subtopics": [] },
-    { "no": 2,  "name": "Fractions",                "subtopics": [] },
-    { "no": 3,  "name": "Angles as Turns",          "subtopics": [] },
-    { "no": 4,  "name": "We the Travellers — II",   "subtopics": [] },
-    { "no": 5,  "name": "Far and Near",             "subtopics": [] },
-    { "no": 6,  "name": "The Dairy Farm",           "subtopics": [] },
-    { "no": 7,  "name": "Shapes and Patterns",      "subtopics": [] },
-    { "no": 8,  "name": "Weight and Capacity",      "subtopics": [] },
-    { "no": 9,  "name": "Coconut Farm",             "subtopics": [] },
-    { "no": 10, "name": "Symmetrical Designs",      "subtopics": [] },
-    { "no": 11, "name": "Grandmother's Quilt",      "subtopics": [] },
-    { "no": 12, "name": "Racing Seconds",           "subtopics": [] },
-    { "no": 13, "name": "Animal Jumps",             "subtopics": [] },
-    { "no": 14, "name": "Maps and Locations",       "subtopics": [] },
-    { "no": 15, "name": "Data Through Pictures",    "subtopics": [] }
+    {
+      "no": 1,
+      "name": "We the Travellers — I",
+      "subtopics": [
+        "Let Us Do",
+        "Nearest Tens (10s), Hundreds (100s), and Thousands (1,000s)",
+        "Let Us Think",
+        "Travelling, Now and Then",
+        "Finding Large Numbers Around Us",
+        "Pastime Mathematics",
+        "King’s Horses"
+      ]
+    },
+    {
+      "no": 2,
+      "name": "Fractions",
+      "subtopics": [
+        "Fun with Fraction Kit",
+        "Let Us Do",
+        "Try This",
+        "Fun with Relations"
+      ]
+    },
+    {
+      "no": 3,
+      "name": "Angles as Turns",
+      "subtopics": [
+        "Let Us Do",
+        "Angle Measuring Tool",
+        "Let Us Think",
+        "Fun with Turns"
+      ]
+    },
+    {
+      "no": 4,
+      "name": "We the Travellers — II",
+      "subtopics": [
+        "Fuel Arithmetic",
+        "Let Us Solve",
+        "Relationship Between Addition and Subtraction",
+        "More Fuel Arithmetic",
+        "Sums of Consecutive Numbers",
+        "The Longest Land Route — Adding Large Numbers",
+        "1885 km",
+        "Subtracting Large Numbers",
+        "Let Us Think and Solve",
+        "Even and Odd Numbers",
+        "Let Us Think",
+        "Math Metric Mela",
+        "Let Us Do"
+      ]
+    },
+    {
+      "no": 5,
+      "name": "Far and Near",
+      "subtopics": [
+        "Let Us Compare",
+        "Let Us Do",
+        "Let Us Explore",
+        "Measuring Long Distances",
+        "Kilometre Race",
+        "Longest Train Journey",
+        "The World of Small Things",
+        "Let Us Measure",
+        "Relationships between Different Units",
+        "Let Us Draw",
+        "Adding and Subtracting Lengths",
+        "Multiplying and Dividing Lengths",
+        "Let Us Estimate",
+        "Try This",
+        "Measure Your Height"
+      ]
+    },
+    {
+      "no": 6,
+      "name": "The Dairy Farm",
+      "subtopics": [
+        "Patterns in Multiplication by 10s and 100s",
+        "Order of Numbers in Multiplication",
+        "Many Ways to Multiply",
+        "Doubling and Halving",
+        "Nearest Multiple",
+        "Let Us Solve",
+        "Waste and Composting",
+        "Let Us Multiply",
+        "Let Us Do",
+        "Dairy Cooperative",
+        "T Th",
+        "Check, Check!",
+        "Let Us Think",
+        "The King’s Reward",
+        "Multiplication Patterns"
+      ]
+    },
+    {
+      "no": 7,
+      "name": "Shapes and Patterns",
+      "subtopics": [
+        "Let Us Try",
+        "Tiling and Tessellation",
+        "Find Out",
+        "Try This",
+        "Circle Designs",
+        "Play with Circles",
+        "Cube Connections",
+        "Icosahedron and Dodecahedron"
+      ]
+    },
+    {
+      "no": 8,
+      "name": "Weight and Capacity",
+      "subtopics": [
+        "Check! Check!",
+        "Different Units but Same Measure",
+        "Let Us Find",
+        "Comparison between Different Weights",
+        "King’s Weight",
+        "From Tiny to Big",
+        "The Grocery Store",
+        "Let Us Do",
+        "More Operations on Weight",
+        "Measuring Capacity",
+        "Big to Small, Small to Big",
+        "Let Us Think",
+        "Let Us Compare",
+        "Let Us Solve"
+      ]
+    },
+    {
+      "no": 9,
+      "name": "Coconut Farm",
+      "subtopics": [
+        "Let Us Play",
+        "Let Us Do",
+        "Patterns in Division and Place Value",
+        "Now fill the place value chart.",
+        "Mental Strategies for Division",
+        "Try It!",
+        "6) 582 (20+20+20+20+10+7",
+        "6) 582 (90 + 7",
+        "Susie’s Farm in Kerala",
+        "Let Us Solve",
+        "4) 726 (100 + +",
+        "16) 902 ( + 6",
+        "25) 535 (20 + 1",
+        "Let Us Learn to Divide",
+        "8) 4376 (200+200+100+40+7",
+        "Solve the following word problems",
+        "Kalpavruksha Coconut Oil",
+        "8) 4376 (500 + 40 + 7",
+        "23) 9913 (400 + 30 + 1",
+        "35) 8890 ( + 50 +",
+        "Division Using Place Value",
+        "5) 6 2 (1 2",
+        "12 (Ones)",
+        "8) 75 (0 9",
+        "3) 3 24 (1 0 8",
+        "2 (Tens)",
+        "24 (Ones)",
+        "6) 13 6 (0 2 2",
+        "16 (Ones)",
+        "Let Us Divide",
+        "6) 7,032 (1,000 + + 70 +",
+        "5) 3,005 ( +",
+        "6) 7 ,032 ( 1 1 7 2",
+        "10 (Hundreds)",
+        "43 (Tens)",
+        "5) 3,0 05 ( 0",
+        "00 (Tens)",
+        "0 (Ones)",
+        "14) 2,874 ( +",
+        "14) 2,8 74 (",
+        "7 ( )",
+        "32) 9,805 ( +",
+        "32) 9,8 05 (",
+        "Vegetable Market",
+        "Mathematical Statements"
+      ]
+    },
+    {
+      "no": 10,
+      "name": "Symmetrical Designs",
+      "subtopics": [
+        "E N X T K V O",
+        "Let Us Make a Windmill Firki",
+        "Let Us Do",
+        "Making Designs",
+        "Let Us Think",
+        "Let Us Explore",
+        "Project Work"
+      ]
+    },
+    {
+      "no": 11,
+      "name": "Grandmother's Quilt",
+      "subtopics": [
+        "Comparing Shapes",
+        "Let Us Do",
+        "Let Us Explore",
+        "Let Us Play"
+      ]
+    },
+    {
+      "no": 12,
+      "name": "Racing Seconds",
+      "subtopics": [
+        "School Race",
+        "Let Us Do",
+        "Let Us Find",
+        "Conversion of Hours to Minutes"
+      ]
+    },
+    {
+      "no": 13,
+      "name": "Animal Jumps",
+      "subtopics": [
+        "Find the hidden numbers.",
+        "Let Us Do"
+      ]
+    },
+    {
+      "no": 14,
+      "name": "Maps and Locations",
+      "subtopics": [
+        "Bird Watching!",
+        "Map of a Room",
+        "Zoo Trip",
+        "Bus Route",
+        "Delhi Metro Train Stations",
+        "Let Us Do",
+        "Anthill in the Zoo",
+        "Locating the Animals in the Zoological Park (Zoo)"
+      ]
+    },
+    {
+      "no": 15,
+      "name": "Data Through Pictures",
+      "subtopics": [
+        "Stock-Taking in a Shop",
+        "Two-wheelers on the Road",
+        "Recording a Day",
+        "Day in My Life",
+        "Food Wastage in the School Canteen",
+        "True or False",
+        "Fractions Kit",
+        "Tessellation and Shapes",
+        "Number Tokens",
+        "Cut along the dotted lines and fold along the solid lines",
+        "Net of a Icosahedron",
+        "Net of a Dodecahedron"
+      ]
+    }
   ]
 }

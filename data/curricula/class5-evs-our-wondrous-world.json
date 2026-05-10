@@ -8,25 +8,227 @@
     "source_pdf": "https://ncert.nic.in/textbook/pdf/eeww1ps.pdf",
     "chapters_verified": true,
     "subtopics_verified": false,
-    "notes": "Chapter names verified via Tiwari Academy and LearnCBSE (cross-referenced). Organised into 5 units. Subtopics to be filled from actual PDF."
+    "notes": "Chapter names verified via Tiwari Academy and LearnCBSE (cross-referenced). Organised into 5 units. Subtopics to be filled from actual PDF.",
+    "subtopics_extracted": true
   },
   "units": [
-    { "no": 1, "name": "Life Around Us" },
-    { "no": 2, "name": "Health and Well-being" },
-    { "no": 3, "name": "Incredible India" },
-    { "no": 4, "name": "Things Around Us" },
-    { "no": 5, "name": "Our Amazing Planet" }
+    {
+      "no": 1,
+      "name": "Life Around Us"
+    },
+    {
+      "no": 2,
+      "name": "Health and Well-being"
+    },
+    {
+      "no": 3,
+      "name": "Incredible India"
+    },
+    {
+      "no": 4,
+      "name": "Things Around Us"
+    },
+    {
+      "no": 5,
+      "name": "Our Amazing Planet"
+    }
   ],
   "chapters": [
-    { "no": 1,  "unit": 1, "name": "Water — The Essence of Life",  "subtopics": [] },
-    { "no": 2,  "unit": 1, "name": "Journey of a River",           "subtopics": [] },
-    { "no": 3,  "unit": 2, "name": "The Mystery of Food",          "subtopics": [] },
-    { "no": 4,  "unit": 2, "name": "Our School — A Happy Place",   "subtopics": [] },
-    { "no": 5,  "unit": 3, "name": "Our Vibrant Country",          "subtopics": [] },
-    { "no": 6,  "unit": 3, "name": "Some Unique Places",           "subtopics": [] },
-    { "no": 7,  "unit": 4, "name": "Energy — How Things Work",     "subtopics": [] },
-    { "no": 8,  "unit": 4, "name": "Clothes — How Things are Made","subtopics": [] },
-    { "no": 9,  "unit": 5, "name": "Rhythms of Nature",            "subtopics": [] },
-    { "no": 10, "unit": 5, "name": "Earth — Our Shared Home",      "subtopics": [] }
+    {
+      "no": 1,
+      "unit": 1,
+      "name": "Water — The Essence of Life",
+      "subtopics": [
+        "Life Around Us",
+        "Activity 1",
+        "Water has Different Forms",
+        "Activity 2",
+        "Observing Changes",
+        "Water Cycle",
+        "Activity 3",
+        "Activity 4",
+        "Activity 5",
+        "Surface Water",
+        "Activity 6",
+        "Our Lifeline —",
+        "Rivers in India",
+        "Activity 7",
+        "Life in Water",
+        "Information Card",
+        "Activity 8",
+        "Activity 9",
+        "Activity 10",
+        "Types of Plants in Water",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 2,
+      "unit": 1,
+      "name": "Journey of a River",
+      "subtopics": [
+        "The Life I Hold",
+        "The Many Ways I Support Lives",
+        "Dams — Storing My Water, Changing My",
+        "What Pollutes Me and Why it Matters",
+        "When a River Floods",
+        "When a River Runs Dry!",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 3,
+      "unit": 2,
+      "name": "The Mystery of Food",
+      "subtopics": [
+        "Health and Well-being",
+        "Food Spoilage",
+        "My Food, My Pride",
+        "Chew Right!",
+        "Teeth and Chewing",
+        "Oral Hygiene",
+        "The Danger of Choking",
+        "Food in Our Body",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 4,
+      "unit": 2,
+      "name": "Our School — A Happy Place",
+      "subtopics": [
+        "Green School",
+        "Activity 1",
+        "Be a School Explorer!",
+        "Waste Management",
+        "Find out",
+        "Activity 2",
+        "Let Us be Cool!",
+        "Activity 3",
+        "Dripping Water",
+        "Activity 4",
+        "Greenery Around Us",
+        "Activity 5",
+        "Traffic Signs",
+        "Fire Safety",
+        "Let us practice",
+        "What We do Matters!",
+        "Activity 6",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 5,
+      "unit": 3,
+      "name": "Our Vibrant Country",
+      "subtopics": [
+        "Incredible India",
+        "A Special Day in School",
+        "Republic Day Celebration at Delhi",
+        "Activity 1",
+        "Activity 2",
+        "Finding India in Currency Notes",
+        "Activity 3",
+        "Activity 4",
+        "Symbols that Speak",
+        "Find out",
+        "Our Vibrant Culture",
+        "Activity 5",
+        "Diversity Everywhere",
+        "Activity 6",
+        "Activity 7",
+        "Spirit of Togetherness",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 6,
+      "unit": 3,
+      "name": "Some Unique Places",
+      "subtopics": [
+        "Islands of India",
+        "Sundarbans: Home of the Mangroves",
+        "Northeast India: Green Hills and Great",
+        "Western Ghats",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 7,
+      "unit": 4,
+      "name": "Energy — How Things Work",
+      "subtopics": [
+        "Things Around Us",
+        "Activity 1",
+        "Activity 2",
+        "Activity 3",
+        "Sources of Energy",
+        "Energy from Fuel",
+        "Activity 4",
+        "Activity 5",
+        "Generating Energy from the Sun, Wind and",
+        "Activity 6",
+        "Activity 7",
+        "Activity 8",
+        "Activity 9",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 8,
+      "unit": 4,
+      "name": "Clothes — How Things are Made",
+      "subtopics": [
+        "Patterns with Threads",
+        "Activity 1",
+        "Activity 2",
+        "Traditions of Weaving",
+        "Activity 3",
+        "Activity 4",
+        "Crafting with Needle and Thread",
+        "Activity 5",
+        "Activity 6",
+        "Activity 7",
+        "Activity 8",
+        "Stitch and Decorate",
+        "Traditional Embroideries of India and Their Origin",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 9,
+      "unit": 5,
+      "name": "Rhythms of Nature",
+      "subtopics": [
+        "Our Amazing Planet",
+        "Changes Around Us in a Day",
+        "(Day and Night)",
+        "Demonstration — Day and Night",
+        "Changes Around Us in a Year (Seasons)",
+        "Classroom Activity —",
+        "Seasons’ Chart",
+        "Celebrating Seasons",
+        "Let us reflect"
+      ]
+    },
+    {
+      "no": 10,
+      "unit": 5,
+      "name": "Earth — Our Shared Home",
+      "subtopics": [
+        "Story 1: The Travelling Birds!",
+        "Story 2: Yoga — India’s Gift to the World!",
+        "Story 3: Chilli — A Spice that Changed our Lives!",
+        "Story 4: The Sweet Story of Sugar!",
+        "Story 5: The Mexican Marigold Moves",
+        "into India!",
+        "Story 6: The Cows that Went to Brazil!",
+        "Web of Life",
+        "One Earth, One Family!",
+        "Let us reflect",
+        "Seasons’ Journal",
+        "N otes"
+      ]
+    }
   ]
 }

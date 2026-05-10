@@ -81,56 +81,6 @@ export const CURRICULA = {
     ],
   },
 
-  // Source: data/curricula/class6-curiosity.json
-  // Book: Curiosity (NCERT, Reprint 2026-27) — https://ncert.nic.in/textbook/pdf/fecu1ps.pdf
-  "class6-science": {
-    id: "class6-science", grade: 6, subject: "Science",
-    label: "Class 6 — Science (Curiosity)",
-    aiHint: "NCERT Class 6 Science — Curiosity (NEP 2020, CBSE India)",
-    topics: [
-      { name: "The Wonderful World of Science",              chapter: 1,  subtopics: [], importance: "medium" },
-      { name: "Diversity in the Living World",               chapter: 2,  subtopics: [], importance: "high"   },
-      { name: "Mindful Eating: A Path to a Healthy Body",    chapter: 3,  subtopics: [], importance: "high"   },
-      { name: "Exploring Magnets",                           chapter: 4,  subtopics: [], importance: "high"   },
-      { name: "Measurement of Length and Motion",            chapter: 5,  subtopics: [], importance: "high"   },
-      { name: "Materials Around Us",                         chapter: 6,  subtopics: [], importance: "high"   },
-      { name: "Temperature and its Measurement",             chapter: 7,  subtopics: [], importance: "high"   },
-      { name: "A Journey through States of Water",           chapter: 8,  subtopics: [], importance: "high"   },
-      { name: "Methods of Separation in Everyday Life",      chapter: 9,  subtopics: [], importance: "high"   },
-      { name: "Living Creatures: Exploring their Characteristics", chapter: 10, subtopics: [], importance: "high" },
-      { name: "Nature's Treasures",                          chapter: 11, subtopics: [], importance: "medium" },
-      { name: "Beyond Earth",                                chapter: 12, subtopics: [], importance: "medium" },
-    ],
-  },
-
-  // Source: data/curricula/class6-exploring-society.json
-  // Book: Exploring Society: India and Beyond (NCERT, 2026-27) — https://ncert.nic.in/textbook/pdf/fess1ps.pdf
-  // Replaces Our Pasts I, The Earth Our Habitat, and Social and Political Life I
-  "class6-social-science": {
-    id: "class6-social-science", grade: 6, subject: "Social Science",
-    label: "Class 6 — Social Science (Exploring Society)",
-    aiHint: "NCERT Class 6 Social Science — Exploring Society: India and Beyond (NEP 2020, CBSE India). Covers Geography, History, Governance and Civics, and Economy and Society.",
-    topics: [
-      // Geography
-      { name: "Locating Places on the Earth",                                    chapter: 1,  subtopics: [], importance: "high"   },
-      { name: "Oceans and Continents",                                           chapter: 2,  subtopics: [], importance: "high"   },
-      { name: "Landforms and Life",                                              chapter: 3,  subtopics: [], importance: "high"   },
-      // History
-      { name: "Timeline and Sources of History",                                 chapter: 4,  subtopics: [], importance: "high"   },
-      { name: "India, That Is Bharat",                                           chapter: 5,  subtopics: [], importance: "high"   },
-      { name: "The Beginnings of Indian Civilisation",                           chapter: 6,  subtopics: [], importance: "high"   },
-      { name: "India's Cultural Roots",                                          chapter: 7,  subtopics: [], importance: "high"   },
-      // Governance and Civics
-      { name: "Unity in Diversity, or 'Many in the One'",                       chapter: 8,  subtopics: [], importance: "high"   },
-      { name: "Family and Community",                                            chapter: 9,  subtopics: [], importance: "medium" },
-      { name: "Grassroots Democracy — Part 1: Governance",                      chapter: 10, subtopics: [], importance: "high"   },
-      { name: "Grassroots Democracy — Part 2: Local Government in Rural Areas", chapter: 11, subtopics: [], importance: "high"   },
-      { name: "Grassroots Democracy — Part 3: Local Government in Urban Areas", chapter: 12, subtopics: [], importance: "high"   },
-      // Economy and Society
-      { name: "The Value of Work",                                               chapter: 13, subtopics: [], importance: "medium" },
-      { name: "Economic Activities Around Us",                                   chapter: 14, subtopics: [], importance: "high"   },
-    ],
-  },
 };
 
 export const SUBJECTS_BY_GRADE = {
@@ -139,8 +89,6 @@ export const SUBJECTS_BY_GRADE = {
     { id: "class5-evs",  label: "Environmental Studies (EVS)" },
   ],
   6: [
-    { id: "class6-math",           label: "Mathematics"    },
-    { id: "class6-science",        label: "Science"        },
-    { id: "class6-social-science", label: "Social Science" },
+    { id: "class6-math", label: "Mathematics" },
   ],
 };
